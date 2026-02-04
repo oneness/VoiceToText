@@ -13,6 +13,11 @@ struct GroqTranscriber: TranscriptionService {
     }
 
     func transcribe(_ audioURL: URL) async throws -> String {
+        // Check if API is configured
+        guard !apiKey.isEmpty else {
+            throw TranscriptionError.authenticationFailed
+        }
+
         // Verify file exists
         guard FileManager.default.fileExists(atPath: audioURL.path) else {
             throw TranscriptionError.fileNotFound
@@ -70,17 +75,22 @@ struct GroqTranscriber: TranscriptionService {
 // MARK: - Shared Singleton
 
 extension GroqTranscriber {
-    static let shared: GroqTranscriber = {
+    static var shared: GroqTranscriber {
         guard let apiKey = ProcessInfo.processInfo.environment["GROQ_API_KEY"] else {
-            fatalError("GROQ_API_KEY environment variable not set. Please set it before running the app.")
+            // Return a stub transcriber that will provide helpful error messages
+            return GroqTranscriber(apiKey: "")
         }
 
         if apiKey.isEmpty {
-            fatalError("GROQ_API_KEY environment variable is empty. Please provide a valid API key.")
+            return GroqTranscriber(apiKey: "")
         }
 
         return GroqTranscriber(apiKey: apiKey)
-    }()
+    }
+
+    func isConfigured() -> Bool {
+        return !apiKey.isEmpty
+    }
 }
 
 // MARK: - Legacy Support (for backward compatibility)

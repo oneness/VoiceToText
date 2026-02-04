@@ -73,7 +73,7 @@ struct WelcomeView: View {
         VStack(spacing: 24) {
             // Welcome header
             VStack(spacing: 12) {
-                Image(systemName: "waveform.and.mic.filled")
+                Image(systemName: "mic.fill")
                     .font(.system(size: 64))
                     .foregroundColor(.blue)
 
