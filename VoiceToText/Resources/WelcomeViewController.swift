@@ -70,9 +70,10 @@ struct WelcomeView: View {
     let onGetStarted: () -> Void
 
     var body: some View {
-        VStack(spacing: 24) {
-            // Welcome header
-            VStack(spacing: 12) {
+        ScrollView {
+            VStack(spacing: 24) {
+                // Welcome header
+                VStack(spacing: 12) {
                 Image(systemName: "mic.fill")
                     .font(.system(size: 64))
                     .foregroundColor(.blue)
@@ -124,8 +125,6 @@ struct WelcomeView: View {
             }
             .padding(.horizontal, 32)
 
-            Spacer()
-
             // Get Started button
             Button(action: onGetStarted) {
                 Text("Get Started")
@@ -134,10 +133,13 @@ struct WelcomeView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .padding(.top, 32)
             .padding(.bottom, 32)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(NSColor.windowBackgroundColor))
         }
         .frame(minWidth: 600, minHeight: 500)
-        .background(Color(NSColor.windowBackgroundColor))
     }
 }
 

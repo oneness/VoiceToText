@@ -26,8 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Create a window to host the welcome screen
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 750),
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
