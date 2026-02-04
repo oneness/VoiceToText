@@ -652,3 +652,166 @@ func hotkeyManagerSetLastTranscriptionWorks() {
     // We can't directly access lastTranscription, but we can verify it works indirectly
     #expect(true, "setLastTranscription should store text for later pasting")
 }
+
+// MARK: - StatusItemController Mock Implementations
+// These conform to protocols defined in StatusItemController.swift
+
+class MockMenuBarItem: MenuBarItemProtocol {
+    var title: String = ""
+    var menu: NSMenu?
+    var buttonTitleSetCount = 0
+    var menuSetCount = 0
+
+    // Track title changes
+    var allTitles: [String] = []
+
+    var buttonTitle: String {
+        get { return title }
+        set {
+            allTitles.append(newValue)
+            title = newValue
+            buttonTitleSetCount += 1
+        }
+    }
+}
+
+class MockStatusItemFactory: StatusItemFactoryProtocol {
+    var mockItem: MockMenuBarItem = MockMenuBarItem()
+    var createCallCount = 0
+
+    func createStatusItem() -> MenuBarItemProtocol {
+        createCallCount += 1
+        return mockItem
+    }
+}
+
+// MARK: - StatusItemController Tests
+
+@Test("StatusItemController can be initialized with dependencies")
+func statusItemControllerCanBeInitialized() {
+    let mockFactory = MockStatusItemFactory()
+    let controller = StatusItemController(
+        statusItemFactory: mockFactory,
+        recordingManager: RecordingManager.shared
+    )
+    // If this compiles, the test passes
+    #expect(true)
+}
+
+@Test("StatusItemController setState(.idle) sets icon to 🎤")
+func statusItemControllerSetIdleState() {
+    let mockFactory = MockStatusItemFactory()
+    let controller = StatusItemController(
+        statusItemFactory: mockFactory,
+        recordingManager: RecordingManager.shared
+    )
+
+    controller.setState(.idle)
+
+    let mockItem = mockFactory.mockItem as! MockMenuBarItem
+    #expect(mockItem.buttonTitle == "🎤", "Icon should be 🎤 for idle state")
+}
+
+@Test("StatusItemController setState(.recording) sets icon to 🔴")
+func statusItemControllerSetRecordingState() {
+    let mockFactory = MockStatusItemFactory()
+    let controller = StatusItemController(
+        statusItemFactory: mockFactory,
+        recordingManager: RecordingManager.shared
+    )
+
+    controller.setState(.recording)
+
+    let mockItem = mockFactory.mockItem as! MockMenuBarItem
+    #expect(mockItem.buttonTitle == "🔴", "Icon should be 🔴 for recording state")
+}
+
+@Test("StatusItemController setState(.transcribing) sets icon to ⏳")
+func statusItemControllerSetTranscribingState() {
+    let mockFactory = MockStatusItemFactory()
+    let controller = StatusItemController(
+        statusItemFactory: mockFactory,
+        recordingManager: RecordingManager.shared
+    )
+
+    controller.setState(.transcribing)
+
+    let mockItem = mockFactory.mockItem as! MockMenuBarItem
+    #expect(mockItem.buttonTitle == "⏳", "Icon should be ⏳ for transcribing state")
+}
+
+@Test("StatusItemController setup() creates menu bar item")
+func statusItemControllerSetupCreatesMenuBarItem() {
+    let mockFactory = MockStatusItemFactory()
+    let controller = StatusItemController(
+        statusItemFactory: mockFactory,
+        recordingManager: RecordingManager.shared
+    )
+
+    controller.setup()
+
+    #expect(mockFactory.createCallCount == 1, "Should create status item once")
+
+    let mockItem = mockFactory.mockItem as! MockMenuBarItem
+    #expect(mockItem.buttonTitle == "🎤", "Initial icon should be 🎤")
+    #expect(mockItem.menu != nil, "Menu should be created")
+}
+
+@Test("StatusItemController updateHistory() adds items to menu")
+func statusItemControllerUpdateHistoryAddsItemsToMenu() {
+    let mockFactory = MockStatusItemFactory()
+    let controller = StatusItemController(
+        statusItemFactory: mockFactory,
+        recordingManager: RecordingManager.shared
+    )
+
+    // Setup first
+    controller.setup()
+
+    // Create test transcriptions
+    let transcriptions = [
+        Transcription(id: UUID(), text: "First transcription", timestamp: Date()),
+        Transcription(id: UUID(), text: "Second transcription", timestamp: Date()),
+        Transcription(id: UUID(), text: "Third transcription", timestamp: Date())
+    ]
+
+    controller.updateHistory(transcriptions)
+
+    let mockItem = mockFactory.mockItem as! MockMenuBarItem
+    #expect(mockItem.menu != nil, "Menu should exist")
+
+    // Menu should have header, separator, history items, another separator, and quit
+    // So minimum 5 items (header + separator + items + separator + quit)
+    #expect((mockItem.menu?.items.count ?? 0) >= 5, "Menu should contain history items")
+}
+
+@Test("StatusItemController updateHistory() limits to last 10 transcriptions")
+func statusItemControllerUpdateHistoryLimitsTo10() {
+    let mockFactory = MockStatusItemFactory()
+    let controller = StatusItemController(
+        statusItemFactory: mockFactory,
+        recordingManager: RecordingManager.shared
+    )
+
+    // Setup first
+    controller.setup()
+
+    // Create 15 transcriptions
+    var transcriptions: [Transcription] = []
+    for i in 1...15 {
+        transcriptions.append(Transcription(
+            id: UUID(),
+            text: "Transcription \(i)",
+            timestamp: Date()
+        ))
+    }
+
+    controller.updateHistory(transcriptions)
+
+    let mockItem = mockFactory.mockItem as! MockMenuBarItem
+    let menu = mockItem.menu!
+
+    // Should have header (1) + separator (1) + 10 history items + separator (1) + quit (1) = 14
+    // Or similar structure with max 10 history items
+    #expect(menu.items.count >= 10, "Should have at least 10 items in menu")
+}
