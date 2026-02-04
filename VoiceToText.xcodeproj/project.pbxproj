@@ -18,6 +18,11 @@
 		A1000009000000000000001 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000009000000000000001 /* StatusItemController.swift */; };
 		A1000011000000000000001 /* TranscriptionHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000011000000000000001 /* TranscriptionHistoryManager.swift */; };
 		A1000010000000000000002 /* VoiceToTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000010000000000000001 /* VoiceToTextTests.swift */; };
+		A1000012000000000000001 /* HTTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000012000000000000001 /* HTTPClient.swift */; };
+		A1000013000000000000001 /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000013000000000000001 /* TranscriptionService.swift */; };
+		A1000014000000000000001 /* TranscriptionError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000014000000000000001 /* TranscriptionError.swift */; };
+		A1000015000000000000001 /* SetupChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000015000000000000001 /* SetupChecker.swift */; };
+		A1000016000000000000001 /* WelcomeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000016000000000000001 /* WelcomeViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +37,11 @@
 		A0000009000000000000001 /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
 		A0000010000000000000001 /* VoiceToTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceToTextTests.swift; sourceTree = "<group>"; };
 		A0000011000000000000001 /* TranscriptionHistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionHistoryManager.swift; sourceTree = "<group>"; };
+		A0000012000000000000001 /* HTTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPClient.swift; sourceTree = "<group>"; };
+		A0000013000000000000001 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
+		A0000014000000000000001 /* TranscriptionError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionError.swift; sourceTree = "<group>"; };
+		A0000015000000000000001 /* SetupChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupChecker.swift; sourceTree = "<group>"; };
+		A0000016000000000000001 /* WelcomeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeViewController.swift; sourceTree = "<group>"; };
 		A0000020000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A0000030000000000000001 /* VoiceToText.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceToText.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000040000000000000001 /* VoiceToTextTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoiceToTextTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -108,6 +118,7 @@
 			children = (
 				A0000003000000000000001 /* AppState.swift */,
 				A0000004000000000000001 /* Transcription.swift */,
+				A0000014000000000000001 /* TranscriptionError.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -119,6 +130,8 @@
 				A0000006000000000000001 /* GroqTranscriber.swift */,
 				A0000007000000000000001 /* TextPaster.swift */,
 				A0000011000000000000001 /* TranscriptionHistoryManager.swift */,
+				A0000012000000000000001 /* HTTPClient.swift */,
+				A0000013000000000000001 /* TranscriptionService.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -143,6 +156,8 @@
 			isa = PBXGroup;
 			children = (
 				A0000020000000000000001 /* Info.plist */,
+				A0000015000000000000001 /* SetupChecker.swift */,
+				A0000016000000000000001 /* WelcomeViewController.swift */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -247,6 +262,11 @@
 				A1000008000000000000001 /* HotkeyManager.swift in Sources */,
 				A1000009000000000000001 /* StatusItemController.swift in Sources */,
 				A1000011000000000000001 /* TranscriptionHistoryManager.swift in Sources */,
+				A1000012000000000000001 /* HTTPClient.swift in Sources */,
+				A1000013000000000000001 /* TranscriptionService.swift in Sources */,
+				A1000014000000000000001 /* TranscriptionError.swift in Sources */,
+				A1000015000000000000001 /* SetupChecker.swift in Sources */,
+				A1000016000000000000001 /* WelcomeViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
