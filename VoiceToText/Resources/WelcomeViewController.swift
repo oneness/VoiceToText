@@ -33,7 +33,7 @@ class WelcomeViewController: NSViewController {
     /// Get Started button action
     func onGetStarted() {
         setupChecker.markSetupComplete()
-        dismissViewController(nil)
+        dismiss(nil)
     }
 
     /// Setup steps to display

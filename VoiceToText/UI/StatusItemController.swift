@@ -30,7 +30,7 @@ class DefaultStatusItemFactory: StatusItemFactoryProtocol {
 class StatusItemController: ObservableObject {
     static let shared = StatusItemController()
 
-    private let statusItem: MenuBarItemProtocol
+    private var statusItem: MenuBarItemProtocol
     private let statusItemFactory: StatusItemFactoryProtocol
     private let recordingManager: RecordingManager
     private var cancellables = Set<AnyCancellable>()
