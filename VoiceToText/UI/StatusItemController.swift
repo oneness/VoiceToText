@@ -2,27 +2,37 @@ import Cocoa
 import Combine
 
 class StatusItemController: ObservableObject {
-    static let shared = StatusItemController()
+    // REMOVED SINGLETON - causing issues
+    // static let shared = StatusItemController()
 
     private let statusItem: NSStatusItem
     private let recordingManager: RecordingManager
     private var cancellables = Set<AnyCancellable>()
 
     init(recordingManager: RecordingManager = .shared) {
+        print("DEBUG: StatusItemController init() called - THIS PROVES INIT IS RUNNING")
+        NSLog("DEBUG: StatusItemController init() called - THIS PROVES INIT IS RUNNING")
         self.recordingManager = recordingManager
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        print("DEBUG: Created NSStatusItem")
+        NSLog("DEBUG: Created NSStatusItem")
         setup()
+        print("DEBUG: setup() completed")
+        NSLog("DEBUG: setup() completed")
     }
 
     private func setup() {
         print("DEBUG: StatusItemController setup() called")
+        NSLog("DEBUG: StatusItemController setup() called")
 
-        // Set initial icon
+        // Set initial icon - try text first
         if let button = statusItem.button {
-            button.title = "🎤"
-            print("DEBUG: Set status item button title to 🎤")
+            button.title = "VT"
+            print("DEBUG: Set status item button title to VT")
+            NSLog("DEBUG: Set status item button title to VT")
         } else {
             print("ERROR: Status item button is nil!")
+            NSLog("ERROR: Status item button is nil!")
         }
 
         // Create menu
@@ -57,9 +67,9 @@ class StatusItemController: ObservableObject {
         if let button = statusItem.button {
             switch state {
             case .idle:
-                button.title = "🎤"
+                button.title = "VT"
             case .recording:
-                button.title = "🔴"
+                button.title = "●"
             case .transcribing:
                 button.title = "⏳"
             }
