@@ -108,3 +108,58 @@ func eachTranscriptionHasUniqueUUID() {
 
     #expect(transcription1.id != transcription2.id)
 }
+
+// MARK: - RecordingManager Tests
+
+@Test("RecordingManager has a shared singleton instance")
+func recordingManagerHasSharedSingleton() {
+    let instance1 = RecordingManager.shared
+    let instance2 = RecordingManager.shared
+
+    #expect(instance1 === instance2, "RecordingManager.shared should return the same instance")
+}
+
+@Test("RecordingManager starts in idle state")
+func recordingManagerStartsInIdleState() {
+    let manager = RecordingManager.shared
+    #expect(manager.state == .idle, "RecordingManager should start in idle state")
+}
+
+@Test("RecordingManager startRecording() changes state to recording")
+func recordingManagerStartRecordingChangesState() {
+    let manager = RecordingManager.shared
+
+    // Ensure we start in idle state
+    #expect(manager.state == .idle, "Should start in idle state")
+
+    manager.startRecording()
+
+    #expect(manager.state == .recording, "State should be recording after startRecording()")
+}
+
+@Test("RecordingManager stopRecording() changes state from recording to idle")
+func recordingManagerStopRecordingChangesState() {
+    let manager = RecordingManager.shared
+
+    // Start recording first
+    manager.startRecording()
+    #expect(manager.state == .recording, "Should be in recording state")
+
+    manager.stopRecording()
+
+    #expect(manager.state == .idle, "State should be idle after stopRecording()")
+}
+
+@Test("RecordingManager toggle() switches between idle and recording")
+func recordingManagerToggleSwitchesStates() {
+    let manager = RecordingManager.shared
+
+    // Start in idle, toggle to recording
+    #expect(manager.state == .idle, "Should start in idle state")
+    manager.toggle()
+    #expect(manager.state == .recording, "State should be recording after first toggle()")
+
+    // Toggle back to idle
+    manager.toggle()
+    #expect(manager.state == .idle, "State should be idle after second toggle()")
+}
