@@ -939,3 +939,147 @@ func fullWorkflowIntegration() async throws {
     // Step 4: In real workflow, TextPaster would paste the result
     // Step 5: In real workflow, HotkeyManager would store the transcription
 }
+
+// MARK: - SetupChecker Protocol Definitions
+
+protocol UserDefaultsProtocol {
+    func bool(forKey: String) -> Bool
+    func set(_ value: Bool, forKey: String)
+    func removeObject(forKey: String)
+}
+
+class MockUserDefaults: UserDefaultsProtocol {
+    var storage: [String: Bool] = [:]
+
+    func bool(forKey key: String) -> Bool {
+        return storage[key] ?? false
+    }
+
+    func set(_ value: Bool, forKey key: String) {
+        storage[key] = value
+    }
+
+    func removeObject(forKey key: String) {
+        storage.removeValue(forKey: key)
+    }
+}
+
+// MARK: - SetupChecker Tests
+
+@Test("SetupChecker can be initialized with UserDefaults")
+func setupCheckerCanBeInitialized() {
+    let mockDefaults = MockUserDefaults()
+    let setupChecker = SetupChecker(userDefaults: mockDefaults)
+    // If this compiles, the test passes
+    #expect(true)
+}
+
+@Test("SetupChecker hasCompletedSetup() returns false on first launch")
+func setupCheckerReturnsFalseOnFirstLaunch() {
+    let mockDefaults = MockUserDefaults()
+    let setupChecker = SetupChecker(userDefaults: mockDefaults)
+
+    #expect(setupChecker.hasCompletedSetup() == false, "Should return false on first launch")
+}
+
+@Test("SetupChecker hasCompletedSetup() returns true after marking complete")
+func setupCheckerReturnsTrueAfterMarkingComplete() {
+    let mockDefaults = MockUserDefaults()
+    let setupChecker = SetupChecker(userDefaults: mockDefaults)
+
+    setupChecker.markSetupComplete()
+
+    #expect(setupChecker.hasCompletedSetup() == true, "Should return true after marking complete")
+}
+
+@Test("SetupChecker markSetupComplete() saves to UserDefaults")
+func setupCheckerMarkSetupCompleteSavesToDefaults() {
+    let mockDefaults = MockUserDefaults()
+    let setupChecker = SetupChecker(userDefaults: mockDefaults)
+
+    setupChecker.markSetupComplete()
+
+    #expect(mockDefaults.bool(forKey: "hasCompletedSetup") == true, "Should save true to UserDefaults")
+}
+
+@Test("SetupChecker resetSetup() clears UserDefaults")
+func setupCheckerResetSetupClearsDefaults() {
+    let mockDefaults = MockUserDefaults()
+    let setupChecker = SetupChecker(userDefaults: mockDefaults)
+
+    // First mark as complete
+    setupChecker.markSetupComplete()
+    #expect(setupChecker.hasCompletedSetup() == true, "Should be complete")
+
+    // Then reset
+    setupChecker.resetSetup()
+    #expect(setupChecker.hasCompletedSetup() == false, "Should be false after reset")
+    #expect(mockDefaults.bool(forKey: "hasCompletedSetup") == false, "UserDefaults should be cleared")
+}
+
+// MARK: - WelcomeViewController Tests
+
+@Test("WelcomeViewController can be initialized")
+func welcomeViewControllerCanBeInitialized() {
+    // Test that WelcomeViewController can be created
+    // This will fail until we implement the view controller
+    let setupChecker = SetupChecker(userDefaults: MockUserDefaults())
+    let welcomeVC = WelcomeViewController(setupChecker: setupChecker)
+    #expect(welcomeVC != nil, "WelcomeViewController should be initialized")
+}
+
+@Test("WelcomeViewController setup steps are displayed correctly")
+func welcomeViewControllerDisplaysSetupSteps() {
+    let setupChecker = SetupChecker(userDefaults: MockUserDefaults())
+    let welcomeVC = WelcomeViewController(setupChecker: setupChecker)
+
+    // Verify setup steps are defined
+    let steps = welcomeVC.setupSteps
+    #expect(steps.isEmpty == false, "Should have setup steps")
+    #expect(steps.count == 4, "Should have 4 setup steps: FN key, API key, Accessibility, Microphone")
+
+    // Verify each step has a title and description
+    for step in steps {
+        #expect(step.title.isEmpty == false, "Each step should have a title")
+        #expect(step.description.isEmpty == false, "Each step should have a description")
+    }
+}
+
+@Test("WelcomeViewController setup instructions are accurate")
+func welcomeViewControllerSetupInstructionsAreAccurate() {
+    let setupChecker = SetupChecker(userDefaults: MockUserDefaults())
+    let welcomeVC = WelcomeViewController(setupChecker: setupChecker)
+
+    let steps = welcomeVC.setupSteps
+
+    // Step 1: FN key setup
+    #expect(steps[0].title.contains("FN") || steps[0].title.contains("Function"), "First step should mention FN/Function key")
+    #expect(steps[0].description.contains("System Settings") || steps[0].description.contains("Keyboard"), "First step should mention System Settings → Keyboard")
+
+    // Step 2: Groq API key
+    #expect(steps[1].title.contains("API") || steps[1].title.contains("Groq"), "Second step should mention API/Groq")
+    #expect(steps[1].description.contains("GROQ_API_KEY"), "Second step should mention GROQ_API_KEY environment variable")
+
+    // Step 3: Accessibility permissions
+    #expect(steps[2].title.contains("Accessibility"), "Third step should mention Accessibility")
+
+    // Step 4: Microphone permissions
+    #expect(steps[3].title.contains("Microphone"), "Fourth step should mention Microphone")
+}
+
+@Test("WelcomeViewController onGetStarted marks setup complete")
+func welcomeViewControllerOnGetStartedMarksSetupComplete() {
+    let mockDefaults = MockUserDefaults()
+    let setupChecker = SetupChecker(userDefaults: mockDefaults)
+    let welcomeVC = WelcomeViewController(setupChecker: setupChecker)
+
+    // Initially not complete
+    #expect(setupChecker.hasCompletedSetup() == false, "Should not be complete initially")
+
+    // Call get started
+    welcomeVC.onGetStarted()
+
+    // Should now be complete
+    #expect(setupChecker.hasCompletedSetup() == true, "Should be complete after onGetStarted()")
+    #expect(mockDefaults.bool(forKey: "hasCompletedSetup") == true, "UserDefaults should be updated")
+}

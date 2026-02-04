@@ -3,10 +3,53 @@ import Combine
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
+    private let setupChecker = SetupChecker()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("VoiceToText app starting...")
 
+        // Check if this is first launch
+        if !setupChecker.hasCompletedSetup() {
+            showWelcomeScreen()
+        } else {
+            // Proceed with normal app initialization
+            initializeApp()
+        }
+
+        print("VoiceToText app started successfully")
+    }
+
+    private func showWelcomeScreen() {
+        print("First launch detected - showing welcome screen")
+
+        let welcomeVC = WelcomeViewController(setupChecker: setupChecker)
+
+        // Create a window to host the welcome screen
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.center()
+        window.title = "Welcome to VoiceToText"
+        window.contentViewController = welcomeVC
+        window.makeKeyAndOrderFront(nil)
+
+        // Set up a notification observer to detect when setup is complete
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            if self?.setupChecker.hasCompletedSetup() == true {
+                print("Setup completed - initializing app")
+                self?.initializeApp()
+            }
+        }
+    }
+
+    private func initializeApp() {
         // Step 1: Setup menu bar UI
         StatusItemController.shared.setup()
 
@@ -15,8 +58,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Step 3: Setup recording workflow
         setupRecordingWorkflow()
-
-        print("VoiceToText app started successfully")
     }
 
     private func setupRecordingWorkflow() {
