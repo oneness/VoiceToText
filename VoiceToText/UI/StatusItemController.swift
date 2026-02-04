@@ -30,6 +30,11 @@ class StatusItemController: ObservableObject {
             button.title = "🎤"
             print("DEBUG: Set status item button title to 🎤")
             NSLog("DEBUG: Set status item button title to 🎤")
+
+            // Make the button clickable to toggle recording
+            button.action = #selector(toggleRecording)
+            button.target = self
+            button.sendAction(on: .leftMouseDown)
         } else {
             print("ERROR: Status item button is nil!")
             NSLog("ERROR: Status item button is nil!")
@@ -107,6 +112,12 @@ class StatusItemController: ObservableObject {
 
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
+    }
+
+    @objc private func toggleRecording() {
+        print("DEBUG: Menu bar icon clicked - toggling recording")
+        NSLog("DEBUG: Menu bar icon clicked - toggling recording")
+        RecordingManager.shared.toggle()
     }
 }
 
