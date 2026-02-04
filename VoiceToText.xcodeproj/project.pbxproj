@@ -16,6 +16,7 @@
 		A1000007000000000000001 /* TextPaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000007000000000000001 /* TextPaster.swift */; };
 		A1000008000000000000001 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000008000000000000001 /* HotkeyManager.swift */; };
 		A1000009000000000000001 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000009000000000000001 /* StatusItemController.swift */; };
+		A1000011000000000000001 /* TranscriptionHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000011000000000000001 /* TranscriptionHistoryManager.swift */; };
 		A1000010000000000000002 /* VoiceToTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000010000000000000001 /* VoiceToTextTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -30,6 +31,7 @@
 		A0000008000000000000001 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
 		A0000009000000000000001 /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
 		A0000010000000000000001 /* VoiceToTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceToTextTests.swift; sourceTree = "<group>"; };
+		A0000011000000000000001 /* TranscriptionHistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionHistoryManager.swift; sourceTree = "<group>"; };
 		A0000020000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A0000030000000000000001 /* VoiceToText.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceToText.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000040000000000000001 /* VoiceToTextTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoiceToTextTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -116,6 +118,7 @@
 				A0000005000000000000001 /* RecordingManager.swift */,
 				A0000006000000000000001 /* GroqTranscriber.swift */,
 				A0000007000000000000001 /* TextPaster.swift */,
+				A0000011000000000000001 /* TranscriptionHistoryManager.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -243,6 +246,7 @@
 				A1000007000000000000001 /* TextPaster.swift in Sources */,
 				A1000008000000000000001 /* HotkeyManager.swift in Sources */,
 				A1000009000000000000001 /* StatusItemController.swift in Sources */,
+				A1000011000000000000001 /* TranscriptionHistoryManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

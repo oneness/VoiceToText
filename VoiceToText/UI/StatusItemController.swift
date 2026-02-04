@@ -43,7 +43,7 @@ class StatusItemController: ObservableObject {
         self.statusItemFactory = statusItemFactory
         self.recordingManager = recordingManager
         self.statusItem = statusItemFactory.createStatusItem()
-        setup()
+        // Don't call setup() here - let the caller call it explicitly
     }
 
     func setup() {
