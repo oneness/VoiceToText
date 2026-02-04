@@ -348,3 +348,103 @@ func groqTranscriberHandlesAuthenticationFailure() async throws {
     // Clean up
     try? FileManager.default.removeItem(at: audioFile)
 }
+
+// MARK: - TextPaster Protocol Definitions
+
+protocol ScriptExecutor {
+    func execute(_ script: String) throws
+}
+
+protocol ClipboardManager {
+    func copy(_ text: String)
+    func getContents() -> String
+}
+
+// MARK: - Mock Implementations for Testing
+
+class MockScriptExecutor: ScriptExecutor {
+    var lastExecutedScript: String?
+    var shouldThrowError = false
+    var errorToThrow: Error?
+
+    func execute(_ script: String) throws {
+        lastExecutedScript = script
+        if shouldThrowError {
+            throw errorToThrow ?? NSError(domain: "TestError", code: 1, userInfo: nil)
+        }
+    }
+}
+
+class MockClipboardManager: ClipboardManager {
+    var clipboardContents: String = ""
+
+    func copy(_ text: String) {
+        clipboardContents = text
+    }
+
+    func getContents() -> String {
+        return clipboardContents
+    }
+}
+
+// MARK: - TextPaster Tests
+
+@Test("TextPaster can be initialized with dependencies")
+func textPasterCanBeInitialized() {
+    let mockClipboard = MockClipboardManager()
+    let mockScript = MockScriptExecutor()
+    let textPaster = TextPaster(clipboard: mockClipboard, scriptExecutor: mockScript)
+    // If this compiles, the test passes
+    #expect(true)
+}
+
+@Test("TextPaster paste() copies text to clipboard")
+func textPasterPasteCopiesToClipboard() {
+    let mockClipboard = MockClipboardManager()
+    let mockScript = MockScriptExecutor()
+    let textPaster = TextPaster(clipboard: mockClipboard, scriptExecutor: mockScript)
+
+    let testText = "Hello, World!"
+    textPaster.paste(testText)
+
+    #expect(mockClipboard.getContents() == testText, "Text should be copied to clipboard")
+}
+
+@Test("TextPaster paste() executes AppleScript to simulate Cmd+V")
+func textPasterPasteExecutesAppleScript() {
+    let mockClipboard = MockClipboardManager()
+    let mockScript = MockScriptExecutor()
+    let textPaster = TextPaster(clipboard: mockClipboard, scriptExecutor: mockScript)
+
+    let testText = "Test text"
+    textPaster.paste(testText)
+
+    #expect(mockScript.lastExecutedScript != nil, "AppleScript should be executed")
+    #expect(mockScript.lastExecutedScript?.contains("keystroke") == true, "Script should contain keystroke command")
+    #expect(mockScript.lastExecutedScript?.contains("command down") == true, "Script should use command down modifier")
+}
+
+@Test("TextPaster paste() handles empty text gracefully")
+func textPasterHandlesEmptyText() {
+    let mockClipboard = MockClipboardManager()
+    let mockScript = MockScriptExecutor()
+    let textPaster = TextPaster(clipboard: mockClipboard, scriptExecutor: mockScript)
+
+    let emptyText = ""
+    textPaster.paste(emptyText)
+
+    #expect(mockClipboard.getContents() == emptyText, "Empty text should still be copied to clipboard")
+    #expect(mockScript.lastExecutedScript != nil, "AppleScript should still be executed for empty text")
+}
+
+@Test("TextPaster paste() handles multiline text")
+func textPasterHandlesMultilineText() {
+    let mockClipboard = MockClipboardManager()
+    let mockScript = MockScriptExecutor()
+    let textPaster = TextPaster(clipboard: mockClipboard, scriptExecutor: mockScript)
+
+    let multilineText = "Line 1\nLine 2\nLine 3"
+    textPaster.paste(multilineText)
+
+    #expect(mockClipboard.getContents() == multilineText, "Multiline text should be copied to clipboard")
+}
