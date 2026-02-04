@@ -63,12 +63,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("StatusItemController instance created")
 
         // Step 2: Setup global hotkeys (FN key and Cmd+V)
+        print("About to call HotkeyManager.shared.setup()")
+        NSLog("About to call HotkeyManager.shared.setup()")
         HotkeyManager.shared.setup()
         print("HotkeyManager setup complete")
         NSLog("HotkeyManager setup complete")
 
         // Step 3: Setup recording workflow
+        print("About to setup recording workflow")
+        NSLog("About to setup recording workflow")
         setupRecordingWorkflow()
+        print("Recording workflow setup complete")
+        NSLog("Recording workflow setup complete")
     }
 
     private func setupRecordingWorkflow() {

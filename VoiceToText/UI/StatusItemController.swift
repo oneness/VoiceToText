@@ -25,11 +25,11 @@ class StatusItemController: ObservableObject {
         print("DEBUG: StatusItemController setup() called")
         NSLog("DEBUG: StatusItemController setup() called")
 
-        // Set initial icon - try text first
+        // Set initial icon - use emoji
         if let button = statusItem.button {
-            button.title = "VT"
-            print("DEBUG: Set status item button title to VT")
-            NSLog("DEBUG: Set status item button title to VT")
+            button.title = "🎤"
+            print("DEBUG: Set status item button title to 🎤")
+            NSLog("DEBUG: Set status item button title to 🎤")
         } else {
             print("ERROR: Status item button is nil!")
             NSLog("ERROR: Status item button is nil!")
@@ -67,9 +67,9 @@ class StatusItemController: ObservableObject {
         if let button = statusItem.button {
             switch state {
             case .idle:
-                button.title = "VT"
+                button.title = "🎤"
             case .recording:
-                button.title = "●"
+                button.title = "🔴"
             case .transcribing:
                 button.title = "⏳"
             }
