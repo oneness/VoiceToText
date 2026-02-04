@@ -7,16 +7,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("VoiceToText app starting...")
+        NSLog("VoiceToText app starting...")
 
-        // Check if this is first launch
-        if !setupChecker.hasCompletedSetup() {
-            showWelcomeScreen()
-        } else {
-            // Proceed with normal app initialization
-            initializeApp()
-        }
+        // Skip welcome screen for now - always initialize
+        print("Initializing app...")
+        NSLog("Initializing app...")
+        initializeApp()
 
         print("VoiceToText app started successfully")
+        NSLog("VoiceToText app started successfully")
     }
 
     private func showWelcomeScreen() {
@@ -50,11 +49,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func initializeApp() {
-        // Step 1: Setup menu bar UI
-        StatusItemController.shared.setup()
+        print("initializeApp() called")
+        NSLog("initializeApp() called")
+
+        // Step 1: Setup menu bar UI (already initialized in shared singleton)
+        // Trigger initialization by accessing the singleton
+        print("Creating StatusItemController...")
+        NSLog("Creating StatusItemController...")
+        let _ = StatusItemController.shared
+        print("StatusItemController created")
+        NSLog("StatusItemController created")
 
         // Step 2: Setup global hotkeys (FN key and Cmd+V)
         HotkeyManager.shared.setup()
+        print("HotkeyManager setup complete")
+        NSLog("HotkeyManager setup complete")
 
         // Step 3: Setup recording workflow
         setupRecordingWorkflow()

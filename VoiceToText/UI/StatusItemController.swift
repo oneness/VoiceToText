@@ -1,56 +1,31 @@
 import Cocoa
 import Combine
 
-// MARK: - Protocol Abstractions for Testability
-
-protocol MenuBarItemProtocol {
-    var title: String { get set }
-    var menu: NSMenu? { get set }
-}
-
-extension NSStatusItem: MenuBarItemProtocol {
-    var title: String {
-        get { return button?.title ?? "" }
-        set { button?.title = newValue }
-    }
-}
-
-protocol StatusItemFactoryProtocol {
-    func createStatusItem() -> MenuBarItemProtocol
-}
-
-class DefaultStatusItemFactory: StatusItemFactoryProtocol {
-    func createStatusItem() -> MenuBarItemProtocol {
-        return NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    }
-}
-
-// MARK: - StatusItemController
-
 class StatusItemController: ObservableObject {
     static let shared = StatusItemController()
 
-    private var statusItem: MenuBarItemProtocol
-    private let statusItemFactory: StatusItemFactoryProtocol
+    private let statusItem: NSStatusItem
     private let recordingManager: RecordingManager
     private var cancellables = Set<AnyCancellable>()
 
-    // Test-friendly initializer
-    init(
-        statusItemFactory: StatusItemFactoryProtocol = DefaultStatusItemFactory(),
-        recordingManager: RecordingManager = .shared
-    ) {
-        self.statusItemFactory = statusItemFactory
+    init(recordingManager: RecordingManager = .shared) {
         self.recordingManager = recordingManager
-        self.statusItem = statusItemFactory.createStatusItem()
-        // Don't call setup() here - let the caller call it explicitly
+        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        setup()
     }
 
-    func setup() {
-        // Initial icon
-        statusItem.title = "🎤"
+    private func setup() {
+        print("DEBUG: StatusItemController setup() called")
 
-        // Setup menu
+        // Set initial icon
+        if let button = statusItem.button {
+            button.title = "🎤"
+            print("DEBUG: Set status item button title to 🎤")
+        } else {
+            print("ERROR: Status item button is nil!")
+        }
+
+        // Create menu
         let menu = NSMenu()
 
         // Add section header
@@ -64,22 +39,31 @@ class StatusItemController: ObservableObject {
 
         statusItem.menu = menu
 
+        print("DEBUG: Menu set up complete")
+
         // Observe RecordingManager state changes
         recordingManager.$state
             .sink { [weak self] state in
                 self?.setState(state)
             }
             .store(in: &cancellables)
+
+        print("DEBUG: State observation set up")
     }
 
     func setState(_ state: AppState) {
-        switch state {
-        case .idle:
-            statusItem.title = "🎤"
-        case .recording:
-            statusItem.title = "🔴"
-        case .transcribing:
-            statusItem.title = "⏳"
+        print("DEBUG: setState called with: \(state.displayName)")
+
+        if let button = statusItem.button {
+            switch state {
+            case .idle:
+                button.title = "🎤"
+            case .recording:
+                button.title = "🔴"
+            case .transcribing:
+                button.title = "⏳"
+            }
+            print("DEBUG: Button title updated to: \(button.title)")
         }
     }
 
@@ -98,13 +82,14 @@ class StatusItemController: ObservableObject {
 
         for transcription in recentTranscriptions {
             let item = NSMenuItem(title: transcription.text, action: nil, keyEquivalent: "")
-            item.isEnabled = false // Make text non-clickable
             menu.addItem(item)
         }
 
-        // Add separator and quit item
-        menu.addItem(NSMenuItem.separator())
+        if !transcriptions.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
 
+        // Add quit item
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
