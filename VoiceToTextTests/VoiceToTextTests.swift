@@ -2,6 +2,19 @@ import Testing
 import Foundation
 @testable import VoiceToText
 
+// MARK: - Test Support Types
+
+enum TranscriptionError: Error {
+    case networkError
+    case emptyResponse
+    case invalidResponse
+    case authenticationFailed
+}
+
+protocol HTTPClient {
+    func post(url: URL, headers: [String: String], body: Data) async throws -> Data
+}
+
 @Test
 func exampleTest() {
     // Placeholder test to verify Swift Testing is configured
@@ -162,4 +175,176 @@ func recordingManagerToggleSwitchesStates() {
     // Toggle back to idle
     manager.toggle()
     #expect(manager.state == .idle, "State should be idle after second toggle()")
+}
+
+// MARK: - TranscriptionService Protocol Tests
+
+@Test("GroqTranscriber conforms to TranscriptionService protocol")
+func groqTranscriberConformsToProtocol() {
+    let apiKey = "test_api_key_123"
+    let transcriber = GroqTranscriber(apiKey: apiKey)
+
+    // Verify it conforms to TranscriptionService at compile time
+    let expectation: TranscriptionService = transcriber
+    #expect(expectation is TranscriptionService)
+}
+
+// MARK: - Mock HTTP Client for Testing
+
+class MockHTTPClient: HTTPClient {
+    var mockResponse: String?
+    var shouldThrowError = false
+    var mockError: Error?
+
+    func post(url: URL, headers: [String: String], body: Data) async throws -> Data {
+        if shouldThrowError {
+            throw mockError ?? TranscriptionError.networkError
+        }
+
+        if let mockResponse = mockResponse {
+            let responseJSON = ["text": mockResponse]
+            return try JSONEncoder().encode(responseJSON)
+        }
+
+        throw TranscriptionError.emptyResponse
+    }
+}
+
+// MARK: - Helper to create test audio file
+
+func createTestAudioFile() throws -> URL {
+    let tempDir = NSTemporaryDirectory()
+    let audioURL = URL(fileURLWithPath: tempDir).appendingPathComponent("test_audio_\(UUID().uuidString).m4a")
+
+    // Create a dummy audio file
+    let dummyData = Data("fake audio data".utf8)
+    try dummyData.write(to: audioURL)
+
+    return audioURL
+}
+
+// MARK: - GroqTranscriber Tests
+
+@Test("GroqTranscriber can be initialized with an API key")
+func groqTranscriberInitialization() {
+    let apiKey = "test_api_key_123"
+    let transcriber = GroqTranscriber(apiKey: apiKey)
+    // If this compiles, the test passes
+    #expect(true)
+}
+
+@Test("GroqTranscriber transcribe() returns text when given successful response")
+func groqTranscriberReturnsTextOnSuccess() async throws {
+    let apiKey = "test_api_key"
+    let mockClient = MockHTTPClient()
+    mockClient.mockResponse = "Hello, this is a test transcription"
+
+    let transcriber = GroqTranscriber(apiKey: apiKey, httpClient: mockClient)
+    let audioFile = try createTestAudioFile()
+
+    let result = try await transcriber.transcribe(audioFile)
+
+    #expect(result == "Hello, this is a test transcription")
+
+    // Clean up
+    try? FileManager.default.removeItem(at: audioFile)
+}
+
+@Test("GroqTranscriber transcribe() throws error when API call fails")
+func groqTranscriberThrowsErrorOnFailure() async throws {
+    let apiKey = "test_api_key"
+    let mockClient = MockHTTPClient()
+    mockClient.shouldThrowError = true
+    mockClient.mockError = TranscriptionError.networkError
+
+    let transcriber = GroqTranscriber(apiKey: apiKey, httpClient: mockClient)
+    let audioFile = try createTestAudioFile()
+
+    var didThrow = false
+    do {
+        _ = try await transcriber.transcribe(audioFile)
+    } catch TranscriptionError.networkError {
+        didThrow = true
+    } catch {
+        // Other errors
+    }
+
+    #expect(didThrow, "Should throw TranscriptionError.networkError")
+
+    // Clean up
+    try? FileManager.default.removeItem(at: audioFile)
+}
+
+@Test("GroqTranscriber transcribe() handles empty response")
+func groqTranscriberHandlesEmptyResponse() async throws {
+    let apiKey = "test_api_key"
+    let mockClient = MockHTTPClient()
+    mockClient.mockResponse = nil
+
+    let transcriber = GroqTranscriber(apiKey: apiKey, httpClient: mockClient)
+    let audioFile = try createTestAudioFile()
+
+    var didThrowEmptyResponse = false
+    do {
+        _ = try await transcriber.transcribe(audioFile)
+    } catch TranscriptionError.emptyResponse {
+        didThrowEmptyResponse = true
+    } catch {
+        // Other errors
+    }
+
+    #expect(didThrowEmptyResponse, "Should throw TranscriptionError.emptyResponse")
+
+    // Clean up
+    try? FileManager.default.removeItem(at: audioFile)
+}
+
+@Test("GroqTranscriber transcribe() throws error when file not found")
+func groqTranscriberThrowsErrorWhenFileNotFound() async throws {
+    let apiKey = "test_api_key"
+    let mockClient = MockHTTPClient()
+    let transcriber = GroqTranscriber(apiKey: apiKey, httpClient: mockClient)
+
+    let nonExistentFile = URL(fileURLWithPath: "/tmp/non_existent_file_\(UUID().uuidString).m4a")
+
+    var didThrowFileNotFound = false
+    do {
+        _ = try await transcriber.transcribe(nonExistentFile)
+    } catch TranscriptionError.fileNotFound {
+        didThrowFileNotFound = true
+    } catch {
+        // Other errors
+    }
+
+    #expect(didThrowFileNotFound, "Should throw TranscriptionError.fileNotFound")
+}
+
+@Test("GroqTranscriber transcribe() handles authentication failure")
+func groqTranscriberHandlesAuthenticationFailure() async throws {
+    let apiKey = "invalid_api_key"
+
+    // Mock client that simulates 401 response
+    class AuthFailureMockClient: HTTPClient {
+        func post(url: URL, headers: [String: String], body: Data) async throws -> Data {
+            // Simulate 401 response by throwing auth error
+            throw TranscriptionError.authenticationFailed
+        }
+    }
+
+    let transcriber = GroqTranscriber(apiKey: apiKey, httpClient: AuthFailureMockClient())
+    let audioFile = try createTestAudioFile()
+
+    var didThrowAuthFailed = false
+    do {
+        _ = try await transcriber.transcribe(audioFile)
+    } catch TranscriptionError.authenticationFailed {
+        didThrowAuthFailed = true
+    } catch {
+        // Other errors
+    }
+
+    #expect(didThrowAuthFailed, "Should throw TranscriptionError.authenticationFailed")
+
+    // Clean up
+    try? FileManager.default.removeItem(at: audioFile)
 }
