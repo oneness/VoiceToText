@@ -19,27 +19,64 @@ class RecordingManager: NSObject, ObservableObject {
     }
 
     private func setupAudioSession() {
-        // Configure audio session for recording
-        // TODO: Implement audio session setup with AVAudioSession
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .default)
+            try session.setActive(true)
+            print("DEBUG: Audio session configured for recording")
+        } catch {
+            print("ERROR: Failed to setup audio session: \(error)")
+        }
     }
 
     func startRecording() {
-        // TODO: Implement actual recording start logic with AVAudioEngine/AVAudioRecorder
-        state = .recording
-        print("Starting recording...")
+        print("DEBUG: Starting audio recording...")
+        NSLog("Starting audio recording...")
+
+        // Create temporary file path
+        let tempDir = FileManager.default.temporaryDirectory
+        let filename = "recording_\(Int(Date().timeIntervalSince1970)).m4a"
+        let fileURL = tempDir.appendingPathComponent(filename)
+
+        // Define recording settings
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVNumberOfChannelsKey: 1,
+            AVSampleRateKey: 44100.0,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+        ]
+
+        do {
+            audioRecorder = try AVAudioRecorder(url: fileURL, settings: settings)
+            audioRecorder?.delegate = self
+            audioRecorder?.record()
+
+            recordingURL = fileURL
+            state = .recording
+
+            print("DEBUG: Recording started to: \(fileURL.path)")
+            NSLog("Recording started to: %@", fileURL.path)
+        } catch {
+            print("ERROR: Failed to start recording: \(error)")
+            NSLog("ERROR: Failed to start recording: %@", error.localizedDescription)
+        }
     }
 
     func stopRecording() {
-        // TODO: Implement actual recording stop logic
-        state = .idle
+        print("DEBUG: Stopping audio recording...")
+        NSLog("Stopping audio recording...")
 
-        // Notify listeners that recording is complete
-        // For now, create a temporary file URL as a placeholder
-        if let url = recordingURL {
-            onRecordingComplete?(url)
+        audioRecorder?.stop()
+
+        // Wait a moment for the recorder to finish
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            if let url = self?.recordingURL {
+                print("DEBUG: Recording saved to: \(url.path)")
+                NSLog("Recording saved to: %@", url.path)
+                self?.state = .idle
+                self?.onRecordingComplete?(url)
+            }
         }
-
-        print("Stopping recording...")
     }
 
     func toggle() {
@@ -57,5 +94,20 @@ class RecordingManager: NSObject, ObservableObject {
     // Set the recording URL (to be called when actual recording is implemented)
     func setRecordingURL(_ url: URL) {
         self.recordingURL = url
+    }
+}
+
+// MARK: - AVAudioRecorderDelegate
+
+extension RecordingManager: AVAudioRecorderDelegate {
+    func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
+        print("DEBUG: Recording finished, success: \(successfully flag)")
+    }
+
+    func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
+        if let error = error {
+            print("ERROR: Recording error: \(error.localizedDescription)")
+            NSLog("ERROR: Recording error: %@", error.localizedDescription)
+        }
     }
 }

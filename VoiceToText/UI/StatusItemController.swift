@@ -43,6 +43,13 @@ class StatusItemController: ObservableObject {
         // Create menu
         let menu = NSMenu()
 
+        // Add start/stop recording menu item at the top
+        let toggleItem = NSMenuItem(title: "▶️ Start Recording", action: #selector(toggleRecording), keyEquivalent: "r")
+        toggleItem.target = self
+        menu.addItem(toggleItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         // Add section header
         menu.addItem(NSMenuItem.sectionHeader(title: "History"))
         menu.addItem(NSMenuItem.separator())
@@ -79,6 +86,19 @@ class StatusItemController: ObservableObject {
                 button.title = "⏳"
             }
             print("DEBUG: Button title updated to: \(button.title)")
+        }
+
+        // Update menu item text
+        guard let menu = statusItem.menu,
+              let toggleItem = menu.items.first else { return }
+
+        switch state {
+        case .idle:
+            toggleItem.title = "▶️ Start Recording"
+        case .recording:
+            toggleItem.title = "⏹ Stop Recording"
+        case .transcribing:
+            toggleItem.title = "⏳ Transcribing..."
         }
     }
 
