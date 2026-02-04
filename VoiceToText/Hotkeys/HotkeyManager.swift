@@ -1,25 +1,92 @@
 import Foundation
-import Carbon
+import AppKit
+
+// MARK: - Protocol Definitions
+
+protocol SystemEventMonitor {
+    func startMonitoring(_ handler: @escaping (NSEvent) -> Void)
+    func stopMonitoring()
+}
+
+protocol KeyCodeDetector {
+    func isFNKey(_ event: NSEvent) -> Bool
+    func isCmdV(_ event: NSEvent) -> Bool
+}
+
+// MARK: - Default Implementations
+
+class DefaultKeyCodeDetector: KeyCodeDetector {
+    // FN key detection - requires Karabiner-Elements remapping to F13 (key code 63)
+    func isFNKey(_ event: NSEvent) -> Bool {
+        return event.keyCode == 63 // F13, remapped from FN key
+    }
+
+    // Cmd+V detection (key code 9 with Command modifier)
+    func isCmdV(_ event: NSEvent) -> Bool {
+        return event.keyCode == 9 && event.modifierFlags.contains(.command)
+    }
+}
+
+class NSEventMonitor: SystemEventMonitor {
+    private var monitor: AnyObject?
+
+    func startMonitoring(_ handler: @escaping (NSEvent) -> Void) {
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: handler) as AnyObject
+    }
+
+    func stopMonitoring() {
+        if let monitor = monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+}
+
+// MARK: - HotkeyManager
 
 class HotkeyManager {
-    private var hotkeyRef: EventHotKeyRef?
+    static let shared = HotkeyManager()
 
-    init() {
-        setupGlobalHotkey()
+    private var lastTranscription: String = ""
+    private var eventMonitor: SystemEventMonitor
+    private let keyCodeDetector: KeyCodeDetector
+
+    // For testing - allows dependency injection
+    init(eventMonitor: SystemEventMonitor = NSEventMonitor(),
+         keyCodeDetector: KeyCodeDetector = DefaultKeyCodeDetector()) {
+        self.eventMonitor = eventMonitor
+        self.keyCodeDetector = keyCodeDetector
     }
 
-    private func setupGlobalHotkey() {
-        // TODO: Implement global hotkey registration
-        // This will require Accessibility permissions
-        print("Setting up global hotkey...")
+    func setup() {
+        // Start global key event monitoring
+        eventMonitor.startMonitoring { [weak self] event in
+            self?.handleEvent(event)
+        }
     }
 
-    func registerHotkey(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) {
-        // TODO: Implement hotkey registration with Carbon API
+    private func handleEvent(_ event: NSEvent) {
+        // FN key (key code 63 = F13, remapped from FN)
+        if keyCodeDetector.isFNKey(event) {
+            RecordingManager.shared.toggle()
+            return
+        }
+
+        // Cmd+V (key code 9)
+        if keyCodeDetector.isCmdV(event) {
+            if !lastTranscription.isEmpty {
+                TextPaster.shared.paste(lastTranscription)
+                return // Block system Cmd+V
+            }
+            // Otherwise let system Cmd+V through
+        }
     }
 
-    func toggleRecording() {
-        // TODO: Trigger recording toggle
-        print("Toggle recording hotkey pressed")
+    func setLastTranscription(_ text: String) {
+        lastTranscription = text
+    }
+
+    func stopMonitoring() {
+        eventMonitor.stopMonitoring()
     }
 }
