@@ -24,8 +24,13 @@ class DefaultScriptExecutor: ScriptExecutor {
         _ = appleScript?.executeAndReturnError(&errorDict)
 
         if let error = errorDict {
+            print("AppleScript error: \(error)")
+            NSLog("AppleScript error: %@", error)
             throw NSError(domain: "ScriptExecutor", code: 1, userInfo: error as? [String: Any])
         }
+
+        print("AppleScript executed successfully")
+        NSLog("AppleScript executed successfully")
     }
 }
 
@@ -71,28 +76,8 @@ class TextPaster {
         // 3. Show notification
         showNotification()
 
-        // 4. Try automatic paste (will likely fail without proper code signing)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.attemptAutoPaste()
-        }
-    }
-
-    private func attemptAutoPaste() {
-        os_log("Attempting auto-paste via System Events", log: logger, type: .info)
-
-        let script = """
-        tell application "System Events"
-            keystroke "v" using command down
-        end tell
-        """
-
-        do {
-            try scriptExecutor.execute(script)
-            os_log("Auto-paste successful!", log: logger, type: .info)
-        } catch {
-            os_log("Auto-paste failed (expected without code signing): %{public}@", log: logger, type: .error, error.localizedDescription)
-            // User needs to press Cmd+V manually
-        }
+        // Note: Auto-pasting via AppleScript/CGEvent requires Automation permission
+        // which is difficult to set up programmatically. User presses Cmd+V manually.
     }
 
     private func showNotification() {
@@ -104,8 +89,8 @@ class TextPaster {
             }
 
             let content = UNMutableNotificationContent()
-            content.title = "Transcription Ready"
-            content.body = "Press Cmd+V to paste your transcribed text"
+            content.title = "✅ Transcription Complete!"
+            content.body = "Text ready! Press ⌘V to paste."
             content.sound = .default
 
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)

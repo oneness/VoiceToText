@@ -10,7 +10,6 @@ protocol SystemEventMonitor {
 }
 
 protocol KeyCodeDetector {
-    func isFNKey(_ event: NSEvent) -> Bool
     func isCmdV(_ event: NSEvent) -> Bool
     func isOptionSpace(_ event: NSEvent) -> Bool
 }
@@ -18,19 +17,6 @@ protocol KeyCodeDetector {
 // MARK: - Default Implementations
 
 class DefaultKeyCodeDetector: KeyCodeDetector {
-    // FN key detection - supports multiple key codes
-    func isFNKey(_ event: NSEvent) -> Bool {
-        // Try common key codes for FN/F13-F19
-        return event.keyCode == 63  // F13
-            || event.keyCode == 64  // F14
-            || event.keyCode == 65  // F15
-            || event.keyCode == 96  // F16
-            || event.keyCode == 97  // F17
-            || event.keyCode == 98  // F18
-            || event.keyCode == 99  // F19
-            || event.keyCode == 100 // F20
-    }
-
     // Cmd+V detection (key code 9 with Command modifier)
     func isCmdV(_ event: NSEvent) -> Bool {
         return event.keyCode == 9 && event.modifierFlags.contains(.command)
@@ -132,11 +118,11 @@ class HotkeyManager {
     }
 
     private func handleEvent(_ event: NSEvent) {
-        // Debug: log all key events to find FN key code
+        // Debug: log all key events
         print("DEBUG: Key pressed - keyCode: \(event.keyCode), modifiers: \(event.modifierFlags.rawValue)")
         NSLog("DEBUG: Key pressed - keyCode: %d, modifiers: %lu", event.keyCode, event.modifierFlags.rawValue)
 
-        // Option+Space (primary hotkey)
+        // Option+Space (primary hotkey) - toggles recording
         if keyCodeDetector.isOptionSpace(event) {
             print("DEBUG: Option+Space detected! Toggling recording")
             NSLog("DEBUG: Option+Space detected! Toggling recording")
@@ -144,15 +130,7 @@ class HotkeyManager {
             return
         }
 
-        // FN key (support F13-F20 key codes) - for keyboards with dedicated F-keys
-        if keyCodeDetector.isFNKey(event) {
-            print("DEBUG: FN/F-key detected! Toggling recording")
-            NSLog("DEBUG: FN/F-key detected! Toggling recording")
-            RecordingManager.shared.toggle()
-            return
-        }
-
-        // Cmd+V (key code 9)
+        // Cmd+V - paste last transcription if available
         if keyCodeDetector.isCmdV(event) {
             print("DEBUG: Cmd+V detected, pasting last transcription")
             NSLog("DEBUG: Cmd+V detected, pasting last transcription")
