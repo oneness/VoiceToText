@@ -1,5 +1,8 @@
 import Foundation
 import Cocoa
+import os.log
+import UserNotifications
+import ApplicationServices
 
 // MARK: - Protocol Definitions
 
@@ -46,6 +49,7 @@ class TextPaster {
 
     private let clipboard: ClipboardManager
     private let scriptExecutor: ScriptExecutor
+    private let logger = OSLog(subsystem: "com.voicetext.app", category: "TextPaster")
 
     init(clipboard: ClipboardManager = DefaultClipboardManager(),
          scriptExecutor: ScriptExecutor = DefaultScriptExecutor()) {
@@ -54,16 +58,66 @@ class TextPaster {
     }
 
     func paste(_ text: String) {
+        os_log("paste() called with text length: %d", log: logger, type: .info, text.count)
+
         // 1. Copy text to clipboard
         clipboard.copy(text)
+        os_log("Text copied to clipboard", log: logger, type: .info)
 
-        // 2. Execute AppleScript to simulate Cmd+V
+        // 2. Play sound to alert user
+        NSSound.beep()
+        os_log("Beep played", log: logger, type: .info)
+
+        // 3. Show notification
+        showNotification()
+
+        // 4. Try automatic paste (will likely fail without proper code signing)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.attemptAutoPaste()
+        }
+    }
+
+    private func attemptAutoPaste() {
+        os_log("Attempting auto-paste via System Events", log: logger, type: .info)
+
         let script = """
         tell application "System Events"
             keystroke "v" using command down
         end tell
         """
-        try? scriptExecutor.execute(script)
+
+        do {
+            try scriptExecutor.execute(script)
+            os_log("Auto-paste successful!", log: logger, type: .info)
+        } catch {
+            os_log("Auto-paste failed (expected without code signing): %{public}@", log: logger, type: .error, error.localizedDescription)
+            // User needs to press Cmd+V manually
+        }
+    }
+
+    private func showNotification() {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if let error = error {
+                os_log("Notification authorization failed: %{public}@", log: self.logger, type: .error, error.localizedDescription)
+                return
+            }
+
+            let content = UNMutableNotificationContent()
+            content.title = "Transcription Ready"
+            content.body = "Press Cmd+V to paste your transcribed text"
+            content.sound = .default
+
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+
+            center.add(request) { error in
+                if let error = error {
+                    os_log("Failed to show notification: %{public}@", log: self.logger, type: .error, error.localizedDescription)
+                } else {
+                    os_log("Notification shown to user", log: self.logger, type: .info)
+                }
+            }
+        }
     }
 
     // Legacy method for backward compatibility

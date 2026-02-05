@@ -9,6 +9,7 @@ enum TranscriptionError: LocalizedError {
     case authenticationFailed
     case fileNotFound
     case invalidAudioFormat
+    case timeout
 
     var errorDescription: String? {
         switch self {
@@ -24,6 +25,8 @@ enum TranscriptionError: LocalizedError {
             return "Audio file not found"
         case .invalidAudioFormat:
             return "Invalid audio format"
+        case .timeout:
+            return "Transcription timed out after 30 seconds"
         }
     }
 }

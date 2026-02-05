@@ -1,5 +1,6 @@
 import Cocoa
 import Combine
+import os.log
 
 class StatusItemController: ObservableObject {
     // REMOVED SINGLETON - causing issues
@@ -8,6 +9,7 @@ class StatusItemController: ObservableObject {
     private let statusItem: NSStatusItem
     private let recordingManager: RecordingManager
     private var cancellables = Set<AnyCancellable>()
+    private let logger = OSLog(subsystem: "com.voicetext.app", category: "StatusItemController")
 
     init(recordingManager: RecordingManager = .shared) {
         print("DEBUG: StatusItemController init() called - THIS PROVES INIT IS RUNNING")
@@ -105,24 +107,52 @@ class StatusItemController: ObservableObject {
     func updateHistory(_ transcriptions: [Transcription]) {
         guard let menu = statusItem.menu else { return }
 
+        // Get current state to set correct toggle item text
+        let stateText = recordingManager.state.displayName
+        let toggleTitle: String
+        switch recordingManager.state {
+        case .idle:
+            toggleTitle = "▶️ Start Recording"
+        case .recording:
+            toggleTitle = "⏹ Stop Recording"
+        case .transcribing:
+            toggleTitle = "⏳ Transcribing..."
+        }
+
         // Remove all existing items
         menu.removeAllItems()
 
-        // Add section header
-        menu.addItem(NSMenuItem.sectionHeader(title: "History"))
+        // Add toggle recording item (MUST BE FIRST!)
+        let toggleItem = NSMenuItem(title: toggleTitle, action: #selector(toggleRecording), keyEquivalent: "r")
+        toggleItem.target = self
+        menu.addItem(toggleItem)
+
         menu.addItem(NSMenuItem.separator())
 
-        // Add last 10 transcriptions (most recent first)
-        let recentTranscriptions = Array(transcriptions.suffix(10).reversed())
+        // Add history section
+        menu.addItem(NSMenuItem.sectionHeader(title: "History"))
 
-        for transcription in recentTranscriptions {
-            let item = NSMenuItem(title: transcription.text, action: nil, keyEquivalent: "")
-            menu.addItem(item)
-        }
-
-        if !transcriptions.isEmpty {
+        if transcriptions.isEmpty {
+            // Show message if no history
+            let emptyItem = NSMenuItem(title: "No recordings yet", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            menu.addItem(emptyItem)
+        } else {
             menu.addItem(NSMenuItem.separator())
+
+            // Add last 10 transcriptions (most recent first)
+            let recentTranscriptions = Array(transcriptions.suffix(10).reversed())
+
+            for transcription in recentTranscriptions {
+                // Truncate long text for menu display
+                let displayText = String(transcription.text.prefix(50))
+                let item = NSMenuItem(title: displayText, action: nil, keyEquivalent: "")
+                item.toolTip = transcription.text
+                menu.addItem(item)
+            }
         }
+
+        menu.addItem(NSMenuItem.separator())
 
         // Add quit item
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
@@ -135,8 +165,7 @@ class StatusItemController: ObservableObject {
     }
 
     @objc private func toggleRecording() {
-        print("DEBUG: Menu bar icon clicked - toggling recording")
-        NSLog("DEBUG: Menu bar icon clicked - toggling recording")
+        os_log("Menu bar icon clicked - toggling recording", log: logger, type: .info)
         RecordingManager.shared.toggle()
     }
 }

@@ -1,10 +1,12 @@
 import Cocoa
 import Combine
+import os.log
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private let setupChecker = SetupChecker()
     private var statusItemController: StatusItemController?
+    private let logger = OSLog(subsystem: "com.voicetext.app", category: "AppDelegate")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("VoiceToText app starting...")
@@ -78,6 +80,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupRecordingWorkflow() {
+        NSLog("setupRecordingWorkflow: Accessing RecordingManager.shared...")
+
         // Observe RecordingManager state changes
         RecordingManager.shared.$state
             .dropFirst() // Skip initial value
@@ -90,6 +94,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         RecordingManager.shared.onRecordingComplete = { [weak self] audioURL in
             self?.handleRecordingComplete(audioURL)
         }
+
+        NSLog("setupRecordingWorkflow: Callback set up complete")
     }
 
     private func handleStateChange(_ state: AppState) {
@@ -101,28 +107,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleRecordingComplete(_ audioURL: URL) {
-        print("Recording complete, starting transcription...")
-        NSLog("Recording complete, starting transcription...")
+        os_log("Recording complete, starting transcription...", log: logger, type: .info)
 
         // Update state to transcribing
         RecordingManager.shared.state = .transcribing
 
-        // Run transcription in background
+        // Run transcription in background with timeout
         Task { @MainActor in
             do {
-                // Step 1: Transcribe the audio
-                let transcribedText = try await GroqTranscriber.shared.transcribe(audioURL)
+                os_log("Starting transcription for: %@", log: logger, type: .info, audioURL.path)
 
-                print("Transcription successful: \(transcribedText)")
-                NSLog("Transcription successful: \(transcribedText)")
+                // Add timeout to prevent hanging
+                let transcribedText = try await withThrowingTaskGroup(of: String.self) { group in
+                    group.addTask {
+                        try await GroqTranscriber.shared.transcribe(audioURL)
+                    }
 
-                // Step 2: Paste the text using TextPaster
+                    group.addTask {
+                        try await Task.sleep(nanoseconds: 30_000_000_000) // 30 second timeout
+                        throw TranscriptionError.timeout
+                    }
+
+                    let result = try await group.next()!
+                    group.cancelAll()
+                    return result
+                }
+
+                os_log("Transcription successful: %{public}@", log: logger, type: .info, transcribedText)
+
+                // Step 1: Paste the text using TextPaster
                 TextPaster.shared.paste(transcribedText)
+                os_log("Text pasted to clipboard", log: logger, type: .info)
 
-                // Step 3: Save transcription to HotkeyManager for Cmd+V
+                // Step 2: Save transcription to HotkeyManager for Cmd+V
                 HotkeyManager.shared.setLastTranscription(transcribedText)
 
-                // Step 4: Create and store transcription
+                // Step 3: Create and store transcription
                 let transcription = Transcription(
                     id: UUID(),
                     text: transcribedText,
@@ -131,24 +151,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 // Add to history
                 TranscriptionHistoryManager.shared.add(transcription)
+                os_log("Added to history, total count: %d", log: logger, type: .info, TranscriptionHistoryManager.shared.transcriptions.count)
 
-                // Update StatusItemController with new history
+                // Step 4: Update StatusItemController with new history
                 statusItemController?.updateHistory(
                     TranscriptionHistoryManager.shared.transcriptions
                 )
 
-                print("Created transcription: \(transcription.text)")
-                NSLog("Created transcription: \(transcription.text)")
+                os_log("Created transcription: %{public}@", log: logger, type: .info, transcription.text)
 
                 // Step 5: Return to idle state
                 RecordingManager.shared.state = .idle
+                os_log("State set to idle", log: logger, type: .info)
 
             } catch {
-                print("Transcription failed: \(error.localizedDescription)")
-                NSLog("Transcription failed: \(error.localizedDescription)")
+                os_log("Transcription failed: %{public}@", log: logger, type: .error, error.localizedDescription)
 
                 // Even on error, return to idle state
                 RecordingManager.shared.state = .idle
+                os_log("State set to idle after error", log: logger, type: .info)
             }
         }
     }

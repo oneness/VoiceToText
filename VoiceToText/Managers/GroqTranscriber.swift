@@ -76,10 +76,8 @@ struct GroqTranscriber: TranscriptionService {
 
 extension GroqTranscriber {
     static var shared: GroqTranscriber {
-        guard let apiKey = ProcessInfo.processInfo.environment["GROQ_API_KEY"] else {
-            // Return a stub transcriber that will provide helpful error messages
-            return GroqTranscriber(apiKey: "")
-        }
+        // TODO: Store this in a config file or Keychain instead of hardcoding
+        let apiKey = "REDACTED_GROQ_API_KEY"
 
         if apiKey.isEmpty {
             return GroqTranscriber(apiKey: "")
