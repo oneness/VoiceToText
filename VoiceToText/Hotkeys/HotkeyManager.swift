@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ApplicationServices
 
 // MARK: - Protocol Definitions
 
@@ -11,6 +12,7 @@ protocol SystemEventMonitor {
 protocol KeyCodeDetector {
     func isFNKey(_ event: NSEvent) -> Bool
     func isCmdV(_ event: NSEvent) -> Bool
+    func isOptionSpace(_ event: NSEvent) -> Bool
 }
 
 // MARK: - Default Implementations
@@ -32,6 +34,11 @@ class DefaultKeyCodeDetector: KeyCodeDetector {
     // Cmd+V detection (key code 9 with Command modifier)
     func isCmdV(_ event: NSEvent) -> Bool {
         return event.keyCode == 9 && event.modifierFlags.contains(.command)
+    }
+
+    // Option+Space detection (key code 49 with Option modifier)
+    func isOptionSpace(_ event: NSEvent) -> Bool {
+        return event.keyCode == 49 && event.modifierFlags.contains(.option)
     }
 }
 
@@ -66,9 +73,52 @@ class HotkeyManager {
         self.keyCodeDetector = keyCodeDetector
     }
 
+    private func checkAccessibilityPermission() -> Bool {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+        let accessEnabled = AXIsProcessTrustedWithOptions(options as CFDictionary)
+
+        print("=== Accessibility Permission Check: \(accessEnabled ? "GRANTED" : "DENIED") ===")
+        NSLog("=== Accessibility Permission Check: %@ ===", accessEnabled ? "GRANTED" : "DENIED")
+
+        if !accessEnabled {
+            print("WARNING: Accessibility permission not granted")
+            NSLog("WARNING: Accessibility permission not granted")
+
+            // Show alert to user
+            let alert = NSAlert()
+            alert.messageText = "Accessibility Access Required"
+            alert.informativeText = "VoiceToText needs accessibility access to respond to global hotkeys (Option+Space).\n\nPlease grant permission in System Settings > Privacy & Security > Accessibility."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Open System Settings")
+            alert.addButton(withTitle: "Cancel")
+
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        } else {
+            print("Accessibility permission granted")
+            NSLog("Accessibility permission granted")
+        }
+
+        return accessEnabled
+    }
+
     func setup() {
-        print("DEBUG: HotkeyManager.setup() called - starting global monitoring")
-        NSLog("DEBUG: HotkeyManager.setup() called - starting global monitoring")
+        print("DEBUG: HotkeyManager.setup() called - checking accessibility permission")
+        NSLog("DEBUG: HotkeyManager.setup() called - checking accessibility permission")
+
+        // Check accessibility permission first
+        guard checkAccessibilityPermission() else {
+            print("WARNING: Cannot start hotkey monitoring without accessibility permission")
+            NSLog("WARNING: Cannot start hotkey monitoring without accessibility permission")
+            return
+        }
+
+        print("DEBUG: Starting global key event monitoring")
+        NSLog("DEBUG: Starting global key event monitoring")
 
         // Start global key event monitoring
         eventMonitor.startMonitoring { [weak self] event in
@@ -86,7 +136,15 @@ class HotkeyManager {
         print("DEBUG: Key pressed - keyCode: \(event.keyCode), modifiers: \(event.modifierFlags.rawValue)")
         NSLog("DEBUG: Key pressed - keyCode: %d, modifiers: %lu", event.keyCode, event.modifierFlags.rawValue)
 
-        // FN key (support F13-F20 key codes)
+        // Option+Space (primary hotkey)
+        if keyCodeDetector.isOptionSpace(event) {
+            print("DEBUG: Option+Space detected! Toggling recording")
+            NSLog("DEBUG: Option+Space detected! Toggling recording")
+            RecordingManager.shared.toggle()
+            return
+        }
+
+        // FN key (support F13-F20 key codes) - for keyboards with dedicated F-keys
         if keyCodeDetector.isFNKey(event) {
             print("DEBUG: FN/F-key detected! Toggling recording")
             NSLog("DEBUG: FN/F-key detected! Toggling recording")

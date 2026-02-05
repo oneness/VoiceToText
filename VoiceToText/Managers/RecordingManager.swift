@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Combine
 import os.log
+import Cocoa
 
 class RecordingManager: NSObject, ObservableObject {
     static let shared = RecordingManager()
@@ -22,7 +23,51 @@ class RecordingManager: NSObject, ObservableObject {
     }
 
     private func setupAudioSession() {
-        // AVAudioSession is iOS-only - not needed on macOS
+        // Request microphone permission on macOS
+        if #available(macOS 10.14, *) {
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .notDetermined:
+                os_log("Requesting microphone permission...", log: logger, type: .info)
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    if granted {
+                        os_log("Microphone permission granted", log: self.logger, type: .info)
+                    } else {
+                        os_log("Microphone permission denied", log: self.logger, type: .error)
+                        // Show alert to user
+                        DispatchQueue.main.async {
+                            let alert = NSAlert()
+                            alert.messageText = "Microphone Access Required"
+                            alert.informativeText = "VoiceToText needs microphone access to record audio. Please grant permission in System Settings > Privacy & Security > Microphone."
+                            alert.alertStyle = .warning
+                            alert.addButton(withTitle: "Open System Settings")
+                            alert.addButton(withTitle: "Cancel")
+                            let response = alert.runModal()
+                            if response == .alertFirstButtonReturn {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+                            }
+                        }
+                    }
+                }
+            case .denied, .restricted:
+                os_log("Microphone permission denied or restricted", log: logger, type: .error)
+                DispatchQueue.main.async {
+                    let alert = NSAlert()
+                    alert.messageText = "Microphone Access Required"
+                    alert.informativeText = "VoiceToText needs microphone access to record audio. Please grant permission in System Settings > Privacy & Security > Microphone."
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "Open System Settings")
+                    alert.addButton(withTitle: "Cancel")
+                    let response = alert.runModal()
+                    if response == .alertFirstButtonReturn {
+                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+                    }
+                }
+            case .authorized:
+                os_log("Microphone permission already granted", log: logger, type: .info)
+            @unknown default:
+                os_log("Unknown microphone permission status", log: logger, type: .error)
+            }
+        }
         os_log("Audio recording ready on macOS", log: logger, type: .info)
     }
 
