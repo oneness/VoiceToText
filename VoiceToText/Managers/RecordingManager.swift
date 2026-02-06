@@ -79,12 +79,12 @@ class RecordingManager: NSObject, ObservableObject {
         let filename = "recording_\(Int(Date().timeIntervalSince1970)).m4a"
         let fileURL = tempDir.appendingPathComponent(filename)
 
-        // Define recording settings
+        // Define recording settings - optimized for speed with minimal quality impact
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVNumberOfChannelsKey: 1,
-            AVSampleRateKey: 44100.0,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVSampleRateKey: 16000.0,  // Whisper's native rate - faster upload/processing
+            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue  // Smaller files, minimal accuracy difference
         ]
 
         do {

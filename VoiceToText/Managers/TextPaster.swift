@@ -73,11 +73,8 @@ class TextPaster {
         NSSound.beep()
         os_log("Beep played", log: logger, type: .info)
 
-        // 3. Show notification
-        showNotification()
-
-        // Note: Auto-pasting via AppleScript/CGEvent requires Automation permission
-        // which is difficult to set up programmatically. User presses Cmd+V manually.
+        // 3. Menu bar icon changes back to idle (handled by RecordingManager.state)
+        // Note: User presses Cmd+V to paste the text
     }
 
     private func showNotification() {

@@ -39,10 +39,10 @@ struct GroqTranscriber: TranscriptionService {
         body.append(audioData)
         body.append("\r\n".data(using: .utf8)!)
 
-        // Add model parameter
+        // Add model parameter - using turbo for ~8x faster inference with minimal accuracy loss
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
-        body.append("whisper-large-v3".data(using: .utf8)!)
+        body.append("whisper-large-v3-turbo".data(using: .utf8)!)
         body.append("\r\n".data(using: .utf8)!)
 
         // Close boundary

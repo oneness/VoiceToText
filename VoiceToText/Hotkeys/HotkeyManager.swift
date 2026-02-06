@@ -66,27 +66,13 @@ class HotkeyManager {
         print("=== Accessibility Permission Check: \(accessEnabled ? "GRANTED" : "DENIED") ===")
         NSLog("=== Accessibility Permission Check: %@ ===", accessEnabled ? "GRANTED" : "DENIED")
 
-        if !accessEnabled {
-            print("WARNING: Accessibility permission not granted")
-            NSLog("WARNING: Accessibility permission not granted")
-
-            // Show alert to user
-            let alert = NSAlert()
-            alert.messageText = "Accessibility Access Required"
-            alert.informativeText = "VoiceToText needs accessibility access to respond to global hotkeys (Option+Space).\n\nPlease grant permission in System Settings > Privacy & Security > Accessibility."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Open System Settings")
-            alert.addButton(withTitle: "Cancel")
-
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-        } else {
+        if accessEnabled {
             print("Accessibility permission granted")
             NSLog("Accessibility permission granted")
+        } else {
+            print("WARNING: Accessibility permission not granted")
+            NSLog("WARNING: Accessibility permission not granted")
+            // macOS native dialog will be shown automatically by kAXTrustedCheckOptionPrompt
         }
 
         return accessEnabled
