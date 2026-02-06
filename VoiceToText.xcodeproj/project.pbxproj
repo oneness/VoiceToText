@@ -13,7 +13,6 @@
 		A1000004000000000000001 /* Transcription.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000004000000000000001 /* Transcription.swift */; };
 		A1000005000000000000001 /* RecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000005000000000000001 /* RecordingManager.swift */; };
 		A1000006000000000000001 /* GroqTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000006000000000000001 /* GroqTranscriber.swift */; };
-		A1000007000000000000001 /* TextPaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000007000000000000001 /* TextPaster.swift */; };
 		A1000008000000000000001 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000008000000000000001 /* HotkeyManager.swift */; };
 		A1000009000000000000001 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000009000000000000001 /* StatusItemController.swift */; };
 		A1000011000000000000001 /* TranscriptionHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000011000000000000001 /* TranscriptionHistoryManager.swift */; };
@@ -24,6 +23,7 @@
 		A1000015000000000000001 /* SetupChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000015000000000000001 /* SetupChecker.swift */; };
 		A1000016000000000000001 /* WelcomeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000016000000000000001 /* WelcomeViewController.swift */; };
 		A1000017000000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000017000000000000001 /* main.swift */; };
+		A1000018000000000000001 /* AutoPaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000018000000000000001 /* AutoPaster.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,7 +33,6 @@
 		A0000004000000000000001 /* Transcription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcription.swift; sourceTree = "<group>"; };
 		A0000005000000000000001 /* RecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingManager.swift; sourceTree = "<group>"; };
 		A0000006000000000000001 /* GroqTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroqTranscriber.swift; sourceTree = "<group>"; };
-		A0000007000000000000001 /* TextPaster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextPaster.swift; sourceTree = "<group>"; };
 		A0000008000000000000001 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
 		A0000009000000000000001 /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
 		A0000010000000000000001 /* VoiceToTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceToTextTests.swift; sourceTree = "<group>"; };
@@ -44,6 +43,7 @@
 		A0000015000000000000001 /* SetupChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupChecker.swift; sourceTree = "<group>"; };
 		A0000016000000000000001 /* WelcomeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeViewController.swift; sourceTree = "<group>"; };
 		A0000017000000000000001 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		A0000018000000000000001 /* AutoPaster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoPaster.swift; sourceTree = "<group>"; };
 		A0000020000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A0000030000000000000001 /* VoiceToText.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceToText.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000040000000000000001 /* VoiceToTextTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoiceToTextTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -131,7 +131,7 @@
 			children = (
 				A0000005000000000000001 /* RecordingManager.swift */,
 				A0000006000000000000001 /* GroqTranscriber.swift */,
-				A0000007000000000000001 /* TextPaster.swift */,
+				A0000018000000000000001 /* AutoPaster.swift */,
 				A0000011000000000000001 /* TranscriptionHistoryManager.swift */,
 				A0000012000000000000001 /* HTTPClient.swift */,
 				A0000013000000000000001 /* TranscriptionService.swift */,
@@ -262,7 +262,7 @@
 				A1000004000000000000001 /* Transcription.swift in Sources */,
 				A1000005000000000000001 /* RecordingManager.swift in Sources */,
 				A1000006000000000000001 /* GroqTranscriber.swift in Sources */,
-				A1000007000000000000001 /* TextPaster.swift in Sources */,
+				A1000018000000000000001 /* AutoPaster.swift in Sources */,
 				A1000008000000000000001 /* HotkeyManager.swift in Sources */,
 				A1000009000000000000001 /* StatusItemController.swift in Sources */,
 				A1000011000000000000001 /* TranscriptionHistoryManager.swift in Sources */,

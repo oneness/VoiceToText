@@ -48,7 +48,6 @@ class NSEventMonitor: SystemEventMonitor {
 class HotkeyManager {
     static let shared = HotkeyManager()
 
-    private var lastTranscription: String = ""
     private var eventMonitor: SystemEventMonitor
     private let keyCodeDetector: KeyCodeDetector
 
@@ -116,20 +115,8 @@ class HotkeyManager {
             return
         }
 
-        // Cmd+V - paste last transcription if available
-        if keyCodeDetector.isCmdV(event) {
-            print("DEBUG: Cmd+V detected, pasting last transcription")
-            NSLog("DEBUG: Cmd+V detected, pasting last transcription")
-            if !lastTranscription.isEmpty {
-                TextPaster.shared.paste(lastTranscription)
-                return // Block system Cmd+V
-            }
-            // Otherwise let system Cmd+V through
-        }
-    }
-
-    func setLastTranscription(_ text: String) {
-        lastTranscription = text
+        // Note: Cmd+V is NOT intercepted here anymore to avoid infinite loop with AutoPaster
+        // System Cmd+V works normally for pasting from clipboard
     }
 
     func stopMonitoring() {

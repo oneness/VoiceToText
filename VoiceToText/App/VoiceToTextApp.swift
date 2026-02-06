@@ -135,14 +135,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 os_log("Transcription successful: %{public}@", log: logger, type: .info, transcribedText)
 
-                // Step 1: Paste the text using TextPaster
-                TextPaster.shared.paste(transcribedText)
-                os_log("Text pasted to clipboard", log: logger, type: .info)
+                // Step 1: Auto-paste the text (copies to clipboard, beeps, and simulates Cmd+V)
+                AutoPaster.shared.paste(transcribedText)
+                os_log("Text auto-pasted to active application", log: logger, type: .info)
 
-                // Step 2: Save transcription to HotkeyManager for Cmd+V
-                HotkeyManager.shared.setLastTranscription(transcribedText)
-
-                // Step 3: Create and store transcription
+                // Step 2: Create and store transcription
                 let transcription = Transcription(
                     id: UUID(),
                     text: transcribedText,
@@ -153,14 +150,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 TranscriptionHistoryManager.shared.add(transcription)
                 os_log("Added to history, total count: %d", log: logger, type: .info, TranscriptionHistoryManager.shared.transcriptions.count)
 
-                // Step 4: Update StatusItemController with new history
+                // Step 3: Update StatusItemController with new history
                 statusItemController?.updateHistory(
                     TranscriptionHistoryManager.shared.transcriptions
                 )
 
                 os_log("Created transcription: %{public}@", log: logger, type: .info, transcription.text)
 
-                // Step 5: Return to idle state
+                // Step 4: Return to idle state
                 RecordingManager.shared.state = .idle
                 os_log("State set to idle", log: logger, type: .info)
 

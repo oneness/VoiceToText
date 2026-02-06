@@ -1,6 +1,7 @@
 import Cocoa
 import Combine
 import os.log
+import AppKit
 
 class StatusItemController: ObservableObject {
     // REMOVED SINGLETON - causing issues
@@ -27,11 +28,17 @@ class StatusItemController: ObservableObject {
         print("DEBUG: StatusItemController setup() called")
         NSLog("DEBUG: StatusItemController setup() called")
 
-        // Set initial icon - use emoji
+        // Set initial icon - use SF Symbol
         if let button = statusItem.button {
-            button.title = "🎤"
-            print("DEBUG: Set status item button title to 🎤")
-            NSLog("DEBUG: Set status item button title to 🎤")
+            button.image = icon(named: "mic.circle.fill")
+
+            // Fallback to emoji if SF Symbol not available
+            if button.image == nil {
+                button.title = "🎤"
+            }
+
+            print("DEBUG: Set status item button icon")
+            NSLog("DEBUG: Set status item button icon")
 
             // Make the button clickable to toggle recording
             button.action = #selector(toggleRecording)
@@ -75,19 +82,74 @@ class StatusItemController: ObservableObject {
         print("DEBUG: State observation set up")
     }
 
+    // MARK: - Icon Helpers
+
+    private func icon(named iconName: String) -> NSImage? {
+        // Standard menu bar icon height is 22px (fills the menu bar)
+        // Use large scale for sharpness on Retina displays
+        let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular, scale: .large)
+
+        guard let image = NSImage(
+            systemSymbolName: iconName,
+            accessibilityDescription: nil
+        )?.withSymbolConfiguration(config) else {
+            return nil
+        }
+
+        image.isTemplate = true  // Makes it adapt to light/dark mode
+
+        // Create a new image sized to the full menu bar height (22px)
+        // This ensures the icon fills the entire available space
+        let finalSize = NSSize(width: 22, height: 22)
+        let resizedImage = NSImage(size: finalSize)
+
+        resizedImage.lockFocus()
+        image.draw(
+            in: NSRect(
+                origin: .zero,
+                size: finalSize
+            ),
+            from: NSRect(
+                origin: .zero,
+                size: image.size
+            ),
+            operation: NSCompositingOperation.copy,
+            fraction: 1.0
+        )
+        resizedImage.unlockFocus()
+
+        return resizedImage
+    }
+
     func setState(_ state: AppState) {
         print("DEBUG: setState called with: \(state.displayName)")
 
         if let button = statusItem.button {
+            // Use SF Symbols for cleaner, native macOS look
             switch state {
             case .idle:
-                button.title = "🎤"
+                button.image = icon(named: "mic.circle.fill")
             case .recording:
-                button.title = "🔴"
+                button.image = icon(named: "record.circle.fill")
             case .transcribing:
-                button.title = "⏳"
+                button.image = icon(named: "waveform.circle.fill")
             }
-            print("DEBUG: Button title updated to: \(button.title)")
+
+            // Fallback to emojis if SF Symbols not available
+            if button.image == nil {
+                switch state {
+                case .idle:
+                    button.title = "🎤"
+                case .recording:
+                    button.title = "🔴"
+                case .transcribing:
+                    button.title = "⏳"
+                }
+            } else {
+                button.title = ""  // Clear emoji when using image
+            }
+
+            print("DEBUG: Button updated for state: \(state.displayName)")
         }
 
         // Update menu item text
