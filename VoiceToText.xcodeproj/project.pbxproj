@@ -24,6 +24,7 @@
 		A1000016000000000000001 /* WelcomeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000016000000000000001 /* WelcomeViewController.swift */; };
 		A1000017000000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000017000000000000001 /* main.swift */; };
 		A1000018000000000000001 /* AutoPaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000018000000000000001 /* AutoPaster.swift */; };
+		A1000019000000000000001 /* TranscriptionJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000019000000000000001 /* TranscriptionJournal.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +45,7 @@
 		A0000016000000000000001 /* WelcomeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeViewController.swift; sourceTree = "<group>"; };
 		A0000017000000000000001 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		A0000018000000000000001 /* AutoPaster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoPaster.swift; sourceTree = "<group>"; };
+		A0000019000000000000001 /* TranscriptionJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionJournal.swift; sourceTree = "<group>"; };
 		A0000020000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A0000030000000000000001 /* VoiceToText.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceToText.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000040000000000000001 /* VoiceToTextTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoiceToTextTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -132,6 +134,7 @@
 				A0000005000000000000001 /* RecordingManager.swift */,
 				A0000006000000000000001 /* GroqTranscriber.swift */,
 				A0000018000000000000001 /* AutoPaster.swift */,
+				A0000019000000000000001 /* TranscriptionJournal.swift */,
 				A0000011000000000000001 /* TranscriptionHistoryManager.swift */,
 				A0000012000000000000001 /* HTTPClient.swift */,
 				A0000013000000000000001 /* TranscriptionService.swift */,
@@ -263,6 +266,7 @@
 				A1000005000000000000001 /* RecordingManager.swift in Sources */,
 				A1000006000000000000001 /* GroqTranscriber.swift in Sources */,
 				A1000018000000000000001 /* AutoPaster.swift in Sources */,
+				A1000019000000000000001 /* TranscriptionJournal.swift in Sources */,
 				A1000008000000000000001 /* HotkeyManager.swift in Sources */,
 				A1000009000000000000001 /* StatusItemController.swift in Sources */,
 				A1000011000000000000001 /* TranscriptionHistoryManager.swift in Sources */,

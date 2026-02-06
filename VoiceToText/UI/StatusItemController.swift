@@ -60,8 +60,15 @@ class StatusItemController: ObservableObject {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Add section header
-        menu.addItem(NSMenuItem.sectionHeader(title: "History"))
+        // Add journal section
+        let openJournalItem = NSMenuItem(title: "📖 Open Journal", action: #selector(openJournal), keyEquivalent: "j")
+        openJournalItem.target = self
+        menu.addItem(openJournalItem)
+
+        let openJournalFolderItem = NSMenuItem(title: "📁 Open Journal Folder", action: #selector(openJournalFolder), keyEquivalent: "")
+        openJournalFolderItem.target = self
+        menu.addItem(openJournalFolderItem)
+
         menu.addItem(NSMenuItem.separator())
 
         // Add quit item
@@ -167,62 +174,6 @@ class StatusItemController: ObservableObject {
         }
     }
 
-    func updateHistory(_ transcriptions: [Transcription]) {
-        guard let menu = statusItem.menu else { return }
-
-        // Get current state to set correct toggle item text
-        let stateText = recordingManager.state.displayName
-        let toggleTitle: String
-        switch recordingManager.state {
-        case .idle:
-            toggleTitle = "▶️ Start Recording (⌥ Space)"
-        case .recording:
-            toggleTitle = "⏹ Stop Recording (⌥ Space)"
-        case .transcribing:
-            toggleTitle = "⏳ Transcribing..."
-        }
-
-        // Remove all existing items
-        menu.removeAllItems()
-
-        // Add toggle recording item (MUST BE FIRST!)
-        let toggleItem = NSMenuItem(title: toggleTitle, action: #selector(toggleRecording), keyEquivalent: "r")
-        toggleItem.target = self
-        menu.addItem(toggleItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Add history section
-        menu.addItem(NSMenuItem.sectionHeader(title: "History"))
-
-        if transcriptions.isEmpty {
-            // Show message if no history
-            let emptyItem = NSMenuItem(title: "No recordings yet", action: nil, keyEquivalent: "")
-            emptyItem.isEnabled = false
-            menu.addItem(emptyItem)
-        } else {
-            menu.addItem(NSMenuItem.separator())
-
-            // Add last 10 transcriptions (most recent first)
-            let recentTranscriptions = Array(transcriptions.suffix(10).reversed())
-
-            for transcription in recentTranscriptions {
-                // Truncate long text for menu display
-                let displayText = String(transcription.text.prefix(50))
-                let item = NSMenuItem(title: displayText, action: nil, keyEquivalent: "")
-                item.toolTip = transcription.text
-                menu.addItem(item)
-            }
-        }
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Add quit item
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
-    }
-
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
     }
@@ -230,6 +181,16 @@ class StatusItemController: ObservableObject {
     @objc private func toggleRecording() {
         os_log("Menu bar icon clicked - toggling recording", log: logger, type: .info)
         RecordingManager.shared.toggle()
+    }
+
+    @objc private func openJournal() {
+        os_log("Opening today's journal", log: logger, type: .info)
+        TranscriptionJournal.shared.openTodayJournal()
+    }
+
+    @objc private func openJournalFolder() {
+        os_log("Opening journal folder", log: logger, type: .info)
+        TranscriptionJournal.shared.openJournalFolder()
     }
 }
 

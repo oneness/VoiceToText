@@ -139,25 +139,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 AutoPaster.shared.paste(transcribedText)
                 os_log("Text auto-pasted to active application", log: logger, type: .info)
 
-                // Step 2: Create and store transcription
-                let transcription = Transcription(
-                    id: UUID(),
-                    text: transcribedText,
-                    timestamp: Date()
-                )
+                // Step 2: Save to journal (persistent markdown file)
+                TranscriptionJournal.shared.saveTranscription(transcribedText)
+                os_log("Saved to journal", log: logger, type: .info)
 
-                // Add to history
-                TranscriptionHistoryManager.shared.add(transcription)
-                os_log("Added to history, total count: %d", log: logger, type: .info, TranscriptionHistoryManager.shared.transcriptions.count)
-
-                // Step 3: Update StatusItemController with new history
-                statusItemController?.updateHistory(
-                    TranscriptionHistoryManager.shared.transcriptions
-                )
-
-                os_log("Created transcription: %{public}@", log: logger, type: .info, transcription.text)
-
-                // Step 4: Return to idle state
+                // Step 3: Return to idle state
                 RecordingManager.shared.state = .idle
                 os_log("State set to idle", log: logger, type: .info)
 
