@@ -53,7 +53,8 @@ class StatusItemController: ObservableObject {
         let menu = NSMenu()
 
         // Add start/stop recording menu item at the top
-        let toggleItem = NSMenuItem(title: "▶️ Start Recording", action: #selector(toggleRecording), keyEquivalent: "r")
+        // Note: ⌥+Space is handled by HotkeyManager (global hotkey), not menu keyEquivalent
+        let toggleItem = NSMenuItem(title: "▶️ Start Recording (⌥ Space)", action: #selector(toggleRecording), keyEquivalent: "")
         toggleItem.target = self
         menu.addItem(toggleItem)
 
@@ -158,9 +159,9 @@ class StatusItemController: ObservableObject {
 
         switch state {
         case .idle:
-            toggleItem.title = "▶️ Start Recording"
+            toggleItem.title = "▶️ Start Recording (⌥ Space)"
         case .recording:
-            toggleItem.title = "⏹ Stop Recording"
+            toggleItem.title = "⏹ Stop Recording (⌥ Space)"
         case .transcribing:
             toggleItem.title = "⏳ Transcribing..."
         }
@@ -174,9 +175,9 @@ class StatusItemController: ObservableObject {
         let toggleTitle: String
         switch recordingManager.state {
         case .idle:
-            toggleTitle = "▶️ Start Recording"
+            toggleTitle = "▶️ Start Recording (⌥ Space)"
         case .recording:
-            toggleTitle = "⏹ Stop Recording"
+            toggleTitle = "⏹ Stop Recording (⌥ Space)"
         case .transcribing:
             toggleTitle = "⏳ Transcribing..."
         }
