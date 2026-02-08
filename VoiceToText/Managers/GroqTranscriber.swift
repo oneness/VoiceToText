@@ -75,14 +75,64 @@ struct GroqTranscriber: TranscriptionService {
 // MARK: - Shared Singleton
 
 extension GroqTranscriber {
-    static var shared: GroqTranscriber {
-        // TODO: Store this in a config file or Keychain instead of hardcoding
-        let apiKey = "REDACTED_GROQ_API_KEY"
+    private static func trimmed(_ value: String?) -> String {
+        return (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
-        if apiKey.isEmpty {
-            return GroqTranscriber(apiKey: "")
+    fileprivate static func configFileURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        // Optional override for development and testing.
+        let overridePath = trimmed(environment["VOICETOTEXT_CONFIG_PATH"])
+        if !overridePath.isEmpty {
+            let expanded = (overridePath as NSString).expandingTildeInPath
+            return URL(fileURLWithPath: expanded)
         }
 
+        guard let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+
+        return appSupportDir
+            .appendingPathComponent("VoiceToText", isDirectory: true)
+            .appendingPathComponent("config.json", isDirectory: false)
+    }
+
+    private static func apiKeyFromConfigFile(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> String {
+        guard let url = configFileURL(environment: environment, fileManager: fileManager),
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ""
+        }
+
+        if let key = json["groq_api_key"] as? String {
+            return trimmed(key)
+        }
+        if let key = json["GROQ_API_KEY"] as? String {
+            return trimmed(key)
+        }
+
+        return ""
+    }
+
+    fileprivate static func resolvedAPIKey(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> String {
+        let envKey = trimmed(environment["GROQ_API_KEY"])
+        if !envKey.isEmpty {
+            return envKey
+        }
+
+        return apiKeyFromConfigFile(environment: environment, fileManager: fileManager)
+    }
+
+    static var shared: GroqTranscriber {
+        let apiKey = resolvedAPIKey()
         return GroqTranscriber(apiKey: apiKey)
     }
 
@@ -97,8 +147,9 @@ class LegacyGroqTranscriber {
     private let transcriber: GroqTranscriber
 
     init() {
-        guard let apiKey = ProcessInfo.processInfo.environment["GROQ_API_KEY"] else {
-            fatalError("GROQ_API_KEY environment variable not set")
+        let apiKey = GroqTranscriber.resolvedAPIKey()
+        guard !apiKey.isEmpty else {
+            fatalError("API key not configured. Set GROQ_API_KEY or create ~/Library/Application Support/VoiceToText/config.json with {\"groq_api_key\": \"...\"}.")
         }
         self.transcriber = GroqTranscriber(apiKey: apiKey)
     }
@@ -109,6 +160,6 @@ class LegacyGroqTranscriber {
     }
 
     func isConfigured() -> Bool {
-        return ProcessInfo.processInfo.environment["GROQ_API_KEY"] != nil
+        return !GroqTranscriber.resolvedAPIKey().isEmpty
     }
 }

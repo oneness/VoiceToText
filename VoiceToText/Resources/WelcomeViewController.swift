@@ -46,7 +46,7 @@ class WelcomeViewController: NSViewController {
             ),
             SetupStep(
                 title: "Set Groq API Key",
-                description: "Set the GROQ_API_KEY environment variable with your Groq API key. Get your free API key from https://console.groq.com/keys",
+                description: "Set GROQ_API_KEY in your shell environment OR create ~/Library/Application Support/VoiceToText/config.json with {\"groq_api_key\":\"<YOUR_KEY>\"}. Get your free API key from https://console.groq.com/keys",
                 icon: "key.fill"
             ),
             SetupStep(
@@ -101,7 +101,7 @@ struct WelcomeView: View {
                 SetupStepView(
                     number: 2,
                     title: "Set Groq API Key",
-                    description: "Set the GROQ_API_KEY environment variable with your Groq API key. Get your free API key from https://console.groq.com/keys",
+                    description: "Set GROQ_API_KEY in your shell environment OR create ~/Library/Application Support/VoiceToText/config.json with {\"groq_api_key\":\"<YOUR_KEY>\"}. Get your free API key from https://console.groq.com/keys",
                     icon: "key.fill"
                 )
 

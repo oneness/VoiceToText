@@ -64,12 +64,22 @@ These permissions are requested when the app first runs.
 
 ## Configuration
 
-Set your Groq API key as an environment variable:
+You can provide your Groq API key in either of these ways:
+
+1. Environment variable (good for Terminal launches):
 ```bash
 export GROQ_API_KEY="your-api-key-here"
 ```
 
-Or configure it in the app settings (to be implemented).
+2. Config file (works for Finder launches):
+```bash
+mkdir -p ~/Library/Application\ Support/VoiceToText
+cat > ~/Library/Application\ Support/VoiceToText/config.json <<'JSON'
+{"groq_api_key":"your-api-key-here"}
+JSON
+```
+
+Optional: set `VOICETOTEXT_CONFIG_PATH` to point to a custom config file path.
 
 ## Current Status
 

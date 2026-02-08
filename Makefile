@@ -39,20 +39,17 @@ codesign: ## Code sign the built app
 	@echo "Code signing $(PROJECT_NAME)..."
 	codesign --force --deep --sign - "$(APP_BUNDLE)"
 
-open: codesign ## Open the app
-	@echo "Opening $(PROJECT_NAME)..."
-	open "$(APP_BUNDLE)"
-
 clean: ## Clean build artifacts
 	@echo "Cleaning build..."
 	xcodebuild -project $(PROJECT_NAME).xcodeproj \
 		-scheme $(SCHEME) \
 		clean
 
-build: clean compile ## Full clean build
+build: clean compile codesign ## Full clean build with code signing
 	@echo "Build complete!"
 
-run: clean compile codesign open ## Clean, build, code sign and run the app
-	@echo "Running $(PROJECT_NAME)..."
+run: ## Open the app
+	@echo "Opening $(PROJECT_NAME)..."
+	open "$(APP_BUNDLE)"
 
-.PHONY: help compile codesign open clean build run
+.PHONY: help compile codesign clean build run
