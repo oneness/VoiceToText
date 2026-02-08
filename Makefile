@@ -54,11 +54,15 @@ test: ## Run test suite
 
 run-test: test ## Alias for test target
 
-build: clean compile test codesign ## Full clean build, test, and code sign
+access: ## Open macOS Accessibility settings page
+	@echo "Opening Accessibility settings..."
+	open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+
+build: clean compile test codesign access ## full clean build/test/sign, then opens accessibility settings for add/remove dance
 	@echo "Build complete!"
 
 run: ## Open the app
 	@echo "Opening $(PROJECT_NAME)..."
 	open "$(APP_BUNDLE)"
 
-.PHONY: help compile codesign clean test run-test build run
+.PHONY: help compile codesign clean test run-test access build run
