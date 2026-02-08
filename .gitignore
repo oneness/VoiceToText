@@ -93,3 +93,15 @@ iOSInjectionProject/
 
 # macOS
 .DS_Store
+
+# Legacy local test scripts and binaries (replaced by Xcode test target)
+SimpleMenuBarApp
+SimpleMenuBarApp.swift
+test_hotkey_manager.swift
+test_statusitem
+test_statusitem.swift
+test_statusitemcontroller.swift
+test_textpaster.swift
+test_welcome_screen.sh
+verify_implementation.sh
+.legacy-local/
