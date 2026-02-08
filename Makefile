@@ -20,6 +20,7 @@ MAKEFLAGS += --no-builtin-rules
 PROJECT_NAME := VoiceToText
 SCHEME := VoiceToText
 CONFIGURATION := Debug
+TEST_DESTINATION := platform=macOS
 
 # Get the actual app bundle path from xcodebuild
 APP_BUNDLE := $(shell xcodebuild -project $(PROJECT_NAME).xcodeproj -scheme $(SCHEME) -configuration $(CONFIGURATION) -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $$NF}')/$(PROJECT_NAME).app
@@ -45,11 +46,19 @@ clean: ## Clean build artifacts
 		-scheme $(SCHEME) \
 		clean
 
-build: clean compile codesign ## Full clean build with code signing
+test: ## Run test suite
+	@echo "Running tests..."
+	xcodebuild test -project $(PROJECT_NAME).xcodeproj \
+		-scheme $(SCHEME) \
+		-destination '$(TEST_DESTINATION)'
+
+run-test: test ## Alias for test target
+
+build: clean compile test codesign ## Full clean build, test, and code sign
 	@echo "Build complete!"
 
 run: ## Open the app
 	@echo "Opening $(PROJECT_NAME)..."
 	open "$(APP_BUNDLE)"
 
-.PHONY: help compile codesign clean build run
+.PHONY: help compile codesign clean test run-test build run

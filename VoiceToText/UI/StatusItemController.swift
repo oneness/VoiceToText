@@ -60,17 +60,6 @@ class StatusItemController: ObservableObject {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Add journal section
-        let openJournalItem = NSMenuItem(title: "📖 Open Journal", action: #selector(openJournal), keyEquivalent: "j")
-        openJournalItem.target = self
-        menu.addItem(openJournalItem)
-
-        let openJournalFolderItem = NSMenuItem(title: "📁 Open Journal Folder", action: #selector(openJournalFolder), keyEquivalent: "")
-        openJournalFolderItem.target = self
-        menu.addItem(openJournalFolderItem)
-
-        menu.addItem(NSMenuItem.separator())
-
         // Add quit item
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -183,15 +172,6 @@ class StatusItemController: ObservableObject {
         RecordingManager.shared.toggle()
     }
 
-    @objc private func openJournal() {
-        os_log("Opening today's journal", log: logger, type: .info)
-        TranscriptionJournal.shared.openTodayJournal()
-    }
-
-    @objc private func openJournalFolder() {
-        os_log("Opening journal folder", log: logger, type: .info)
-        TranscriptionJournal.shared.openJournalFolder()
-    }
 }
 
 // MARK: - NSMenuItem Extension for Section Headers
