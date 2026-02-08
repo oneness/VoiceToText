@@ -52,8 +52,6 @@ test: ## Run test suite
 		-scheme $(SCHEME) \
 		-destination '$(TEST_DESTINATION)'
 
-run-test: test ## Alias for test target
-
 access: ## Open macOS Accessibility settings page
 	@echo "Opening Accessibility settings..."
 	open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
@@ -65,4 +63,4 @@ run: ## Open the app
 	@echo "Opening $(PROJECT_NAME)..."
 	open "$(APP_BUNDLE)"
 
-.PHONY: help compile codesign clean test run-test access build run
+.PHONY: help compile codesign clean test access build run
