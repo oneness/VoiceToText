@@ -29,6 +29,34 @@ help: ## Show available targets
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+.*## .*' $(MAKEFILE_LIST) | awk 'BEGIN {FS = "## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
+setup: ## Prompt for API key and save config for Finder/Xcode/Terminal launches
+	@config_dir="$$HOME/Library/Application Support/VoiceToText"; \
+	config_path="$$config_dir/config.json"; \
+	if [[ -n "$${GROQ_API_KEY:-}" ]]; then \
+		echo "GROQ_API_KEY is already set in the environment. Setup not needed."; \
+		exit 0; \
+	fi; \
+	if [[ -f "$$config_path" ]]; then \
+		existing_key="$$(sed -nE 's/.*"(groq_api_key|GROQ_API_KEY)"[[:space:]]*:[[:space:]]*"([^"]+)".*/\2/p' "$$config_path" | head -n1)"; \
+		if [[ -n "$$existing_key" ]]; then \
+			echo "API key is already configured at $$config_path. Setup not needed."; \
+			exit 0; \
+		fi; \
+	fi; \
+	mkdir -p "$$config_dir"; \
+	printf "Enter GROQ API key: "; \
+	IFS= read -r -s api_key; \
+	printf "\n"; \
+	if [[ -z "$$api_key" ]]; then \
+		echo "API key cannot be empty."; \
+		exit 1; \
+	fi; \
+	escaped_key="$$(printf '%s' "$$api_key" | sed 's/\\/\\\\/g; s/\"/\\"/g')"; \
+	printf '{"groq_api_key":"%s"}\n' "$$escaped_key" > "$$config_path"; \
+	chmod 600 "$$config_path"; \
+	echo "Saved API key to $$config_path"; \
+	echo "VoiceToText will read this key when launched from Finder, Xcode, or Terminal."
+
 compile: ## Build the Xcode project
 	@echo "Building $(PROJECT_NAME)..."
 	xcodebuild -project $(PROJECT_NAME).xcodeproj \
@@ -63,4 +91,4 @@ run: ## Open the app
 	@echo "Opening $(PROJECT_NAME)..."
 	open "$(APP_BUNDLE)"
 
-.PHONY: help compile codesign clean test access build run
+.PHONY: help setup compile codesign clean test access build run

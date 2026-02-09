@@ -12,12 +12,17 @@ VoiceToText is a macOS menu bar app that records your voice, transcribes it with
 ### 2. Configure your Groq API key
 Use one of these methods.
 
-Option A: environment variable (best when launching from Terminal)
+Option A (recommended): interactive setup (works for Finder/Xcode/Terminal launches)
+```bash
+make setup
+```
+
+Option B: environment variable (best when launching from Terminal)
 ```bash
 export GROQ_API_KEY="your-groq-api-key"
 ```
 
-Option B: config file (works for Finder/Xcode launches too)
+Option C: config file (works for Finder/Xcode launches too)
 ```bash
 mkdir -p ~/Library/Application\ Support/VoiceToText
 cat > ~/Library/Application\ Support/VoiceToText/config.json <<'JSON'
@@ -68,6 +73,7 @@ make access
 ## Common Commands
 ```bash
 make help      # list targets
+make setup     # prompt for API key and save config
 make compile   # build app
 make test      # run tests
 make run       # open built app
