@@ -11,6 +11,7 @@ class StatusItemController: ObservableObject {
     private let recordingManager: RecordingManager
     private var cancellables = Set<AnyCancellable>()
     private let logger = OSLog(subsystem: "com.voicetext.app", category: "StatusItemController")
+    private let iconSize = NSSize(width: 20, height: 20)
 
     init(recordingManager: RecordingManager = .shared) {
         print("DEBUG: StatusItemController init() called - THIS PROVES INIT IS RUNNING")
@@ -28,13 +29,13 @@ class StatusItemController: ObservableObject {
         print("DEBUG: StatusItemController setup() called")
         NSLog("DEBUG: StatusItemController setup() called")
 
-        // Set initial icon - use SF Symbol
         if let button = statusItem.button {
-            button.image = icon(named: "mic.circle.fill")
+            button.image = statusIcon(for: .idle)
+            button.imagePosition = .imageOnly
 
-            // Fallback to emoji if SF Symbol not available
+            // Fallback text if image generation fails
             if button.image == nil {
-                button.title = "🎤"
+                button.title = "VTT"
             }
 
             print("DEBUG: Set status item button icon")
@@ -81,69 +82,144 @@ class StatusItemController: ObservableObject {
 
     // MARK: - Icon Helpers
 
-    private func icon(named iconName: String) -> NSImage? {
-        // Standard menu bar icon height is 22px (fills the menu bar)
-        // Use large scale for sharpness on Retina displays
-        let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular, scale: .large)
+    private func statusIcon(for state: AppState) -> NSImage? {
+        let image = NSImage(size: iconSize)
+        image.lockFocus()
 
-        guard let image = NSImage(
-            systemSymbolName: iconName,
-            accessibilityDescription: nil
-        )?.withSymbolConfiguration(config) else {
-            return nil
+        let drawingRect = NSRect(origin: .zero, size: iconSize).insetBy(dx: 0.4, dy: 0.4)
+        let backgroundRect = drawingRect.insetBy(dx: 0.45, dy: 0.45)
+        drawBackground(in: backgroundRect)
+        drawBaseGlyph(in: backgroundRect.insetBy(dx: 2.1, dy: 1.8))
+
+        switch state {
+        case .idle:
+            break
+        case .recording:
+            drawRecordingBadge(in: backgroundRect)
+        case .transcribing:
+            drawTranscribingBadge(in: backgroundRect)
         }
 
-        image.isTemplate = true  // Makes it adapt to light/dark mode
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
 
-        // Create a new image sized to the full menu bar height (22px)
-        // This ensures the icon fills the entire available space
-        let finalSize = NSSize(width: 22, height: 22)
-        let resizedImage = NSImage(size: finalSize)
+    private func drawBackground(in rect: NSRect) {
+        let radius = max(3.0, rect.width * 0.24)
+        let backgroundPath = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+        NSColor(calibratedWhite: 0.06, alpha: 1.0).setFill()
+        backgroundPath.fill()
 
-        resizedImage.lockFocus()
-        image.draw(
-            in: NSRect(
-                origin: .zero,
-                size: finalSize
-            ),
-            from: NSRect(
-                origin: .zero,
-                size: image.size
-            ),
-            operation: NSCompositingOperation.copy,
-            fraction: 1.0
+        NSColor(calibratedWhite: 1.0, alpha: 0.10).setStroke()
+        backgroundPath.lineWidth = 0.7
+        backgroundPath.stroke()
+    }
+
+    private func drawBaseGlyph(in rect: NSRect) {
+        let barHeight = max(1.2, rect.height * 0.085)
+        let bars: [(y: CGFloat, widthRatio: CGFloat)] = [
+            (0.85, 0.48),
+            (0.70, 0.74),
+            (0.55, 0.40),
+            (0.39, 0.64),
+            (0.23, 0.86)
+        ]
+
+        NSColor.white.setFill()
+        for bar in bars {
+            let width = rect.width * bar.widthRatio
+            let x = rect.midX - width / 2
+            let y = rect.minY + rect.height * bar.y - barHeight / 2
+            let barRect = NSRect(x: x, y: y, width: width, height: barHeight)
+            NSBezierPath(roundedRect: barRect, xRadius: barHeight / 2, yRadius: barHeight / 2).fill()
+        }
+
+        let stemPath = NSBezierPath()
+        let topY = rect.minY + rect.height * 0.12
+        let neckTopY = rect.minY + rect.height * 0.045
+        let bottomY = rect.minY + rect.height * 0.0
+        let topHalfWidth = rect.width * 0.23
+        let neckHalfWidth = rect.width * 0.10
+
+        stemPath.move(to: NSPoint(x: rect.midX - topHalfWidth, y: topY))
+        stemPath.line(to: NSPoint(x: rect.midX + topHalfWidth, y: topY))
+        stemPath.line(to: NSPoint(x: rect.midX + neckHalfWidth, y: neckTopY))
+        stemPath.line(to: NSPoint(x: rect.midX + neckHalfWidth, y: bottomY))
+        stemPath.line(to: NSPoint(x: rect.midX - neckHalfWidth, y: bottomY))
+        stemPath.line(to: NSPoint(x: rect.midX - neckHalfWidth, y: neckTopY))
+        stemPath.close()
+        stemPath.fill()
+    }
+
+    private func drawRecordingBadge(in rect: NSRect) {
+        let diameter = max(4.2, rect.width * 0.26)
+        let badgeRect = NSRect(
+            x: rect.maxX - diameter - 0.3,
+            y: rect.maxY - diameter - 0.3,
+            width: diameter,
+            height: diameter
         )
-        resizedImage.unlockFocus()
 
-        return resizedImage
+        NSColor(calibratedRed: 0.97, green: 0.20, blue: 0.22, alpha: 1.0).setFill()
+        NSBezierPath(ovalIn: badgeRect).fill()
+
+        NSColor.white.setStroke()
+        let ring = NSBezierPath(ovalIn: badgeRect.insetBy(dx: 0.4, dy: 0.4))
+        ring.lineWidth = 0.7
+        ring.stroke()
+    }
+
+    private func drawTranscribingBadge(in rect: NSRect) {
+        let badgeWidth = max(6.0, rect.width * 0.40)
+        let badgeHeight = max(4.0, rect.height * 0.22)
+        let badgeRect = NSRect(
+            x: rect.maxX - badgeWidth - 0.4,
+            y: rect.maxY - badgeHeight - 0.5,
+            width: badgeWidth,
+            height: badgeHeight
+        )
+        let badgeRadius = badgeHeight / 2
+        let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: badgeRadius, yRadius: badgeRadius)
+        NSColor(calibratedWhite: 0.92, alpha: 1.0).setFill()
+        badgePath.fill()
+
+        let dotSize = max(0.9, badgeHeight * 0.27)
+        let spacing = dotSize * 0.8
+        let totalDotsWidth = dotSize * 3 + spacing * 2
+        let startX = badgeRect.midX - totalDotsWidth / 2
+        let y = badgeRect.midY - dotSize / 2
+
+        for index in 0..<3 {
+            let dotRect = NSRect(
+                x: startX + CGFloat(index) * (dotSize + spacing),
+                y: y,
+                width: dotSize,
+                height: dotSize
+            )
+            NSColor(calibratedWhite: 0.15, alpha: 1.0).setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+        }
     }
 
     func setState(_ state: AppState) {
         print("DEBUG: setState called with: \(state.displayName)")
 
         if let button = statusItem.button {
-            // Use SF Symbols for cleaner, native macOS look
-            switch state {
-            case .idle:
-                button.image = icon(named: "mic.circle.fill")
-            case .recording:
-                button.image = icon(named: "record.circle.fill")
-            case .transcribing:
-                button.image = icon(named: "waveform.circle.fill")
-            }
+            button.image = statusIcon(for: state)
 
-            // Fallback to emojis if SF Symbols not available
+            // Fallback text if image generation fails
             if button.image == nil {
                 switch state {
                 case .idle:
-                    button.title = "🎤"
+                    button.title = "VTT"
                 case .recording:
-                    button.title = "🔴"
+                    button.title = "REC"
                 case .transcribing:
-                    button.title = "⏳"
+                    button.title = "..."
                 }
             } else {
-                button.title = ""  // Clear emoji when using image
+                button.title = ""
             }
 
             print("DEBUG: Button updated for state: \(state.displayName)")

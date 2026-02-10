@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1000020000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0000220000000000000001 /* Assets.xcassets */; };
 		A1000001000000000000001 /* VoiceToTextApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000001000000000000001 /* VoiceToTextApp.swift */; };
 		A1000002000000000000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000002000000000000001 /* AppDelegate.swift */; };
 		A1000003000000000000001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000003000000000000001 /* AppState.swift */; };
@@ -28,6 +29,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A0000220000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A0000001000000000000001 /* VoiceToTextApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceToTextApp.swift; sourceTree = "<group>"; };
 		A0000002000000000000001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A0000003000000000000001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
@@ -161,6 +163,7 @@
 		A0000100000000000000001 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				A0000220000000000000001 /* Assets.xcassets */,
 				A0000020000000000000001 /* Info.plist */,
 				A0000015000000000000001 /* SetupChecker.swift */,
 				A0000016000000000000001 /* WelcomeViewController.swift */,
@@ -248,6 +251,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000020000000000000001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
