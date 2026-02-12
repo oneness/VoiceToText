@@ -24,6 +24,8 @@ TEST_DESTINATION := platform=macOS
 
 # Get the actual app bundle path from xcodebuild
 APP_BUNDLE := $(shell xcodebuild -project $(PROJECT_NAME).xcodeproj -scheme $(SCHEME) -configuration $(CONFIGURATION) -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $$NF}')/$(PROJECT_NAME).app
+INSTALL_DIR ?= /Applications
+INSTALLED_APP_BUNDLE := $(INSTALL_DIR)/$(PROJECT_NAME).app
 
 help: ## Show available targets
 	@echo "Available targets:"
@@ -68,6 +70,12 @@ codesign: ## Code sign the built app
 	@echo "Code signing $(PROJECT_NAME)..."
 	codesign --force --deep --sign - "$(APP_BUNDLE)"
 
+install: ## Copy built app into /Applications so Accessibility can reference a stable path
+	@echo "Copying $(PROJECT_NAME).app to $(INSTALL_DIR)..."
+	rm -rf "$(INSTALLED_APP_BUNDLE)"
+	ditto "$(APP_BUNDLE)" "$(INSTALLED_APP_BUNDLE)"
+	@echo "Copied to $(INSTALLED_APP_BUNDLE)"
+
 clean: ## Clean build artifacts
 	@echo "Cleaning build..."
 	xcodebuild -project $(PROJECT_NAME).xcodeproj \
@@ -84,11 +92,15 @@ access: ## Open macOS Accessibility settings page
 	@echo "Opening Accessibility settings..."
 	open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 
-build: clean compile test codesign access ## full clean build/test/sign, then opens accessibility settings for add/remove dance
+build: clean compile test codesign install access ## full clean build/test/sign/copy, then opens accessibility settings
 	@echo "Build complete!"
 
-run: ## Open the app
+run: ## Open installed app from /Applications, fallback to build output
 	@echo "Opening $(PROJECT_NAME)..."
-	open "$(APP_BUNDLE)"
+	@if [[ -d "$(INSTALLED_APP_BUNDLE)" ]]; then \
+		open "$(INSTALLED_APP_BUNDLE)"; \
+	else \
+		open "$(APP_BUNDLE)"; \
+	fi
 
-.PHONY: help setup compile codesign clean test access build run
+.PHONY: help setup compile codesign install clean test access build run
