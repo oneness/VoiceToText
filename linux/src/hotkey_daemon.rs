@@ -13,10 +13,10 @@ use futures_util::StreamExt;
 use tokio::sync::watch;
 
 use crate::{
-    AppState, AudioCapture, ClipboardCopyError, DesktopCapabilities, PwRecordRecorder,
-    append_transcript_to_journal, build_groq_transcription_request, copy_to_clipboard,
-    execute_http_request, journal_stamp, parse_transcription_response, probe_desktop_capabilities,
-    resolve_home_dir, resolve_journal_dir,
+    AppState, AudioCapture, ClipboardCopyError, CompletionSoundError, DesktopCapabilities,
+    PwRecordRecorder, append_transcript_to_journal, build_groq_transcription_request,
+    copy_to_clipboard, execute_http_request, journal_stamp, parse_transcription_response,
+    play_completion_sound, probe_desktop_capabilities, resolve_home_dir, resolve_journal_dir,
 };
 
 pub const TOGGLE_SHORTCUT_ID: &str = "toggle-recording";
@@ -267,7 +267,16 @@ fn handle_completed_recording(
     let journal_path = append_transcript_to_journal(journal_dir, &stamp, &transcript)?;
 
     match copy_to_clipboard(&transcript) {
-        Ok(method) => eprintln!("copied transcript to clipboard via {:?}", method),
+        Ok(method) => {
+            eprintln!("copied transcript to clipboard via {:?}", method);
+            match play_completion_sound() {
+                Ok(_) => eprintln!("played completion sound"),
+                Err(CompletionSoundError::MissingBundledSound(_)) => {
+                    eprintln!("warning: bundled completion sound is missing; sound skipped")
+                }
+                Err(error) => eprintln!("warning: failed to play completion sound: {error}"),
+            }
+        }
         Err(ClipboardCopyError::NoSupportedCommand) => {
             eprintln!("warning: no supported clipboard command found; transcript was not copied")
         }

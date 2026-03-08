@@ -8,8 +8,8 @@ use chrono::Local;
 use voicetotext_linux_core::{
     AudioCapture, ClipboardCopyError, DEFAULT_RECORD_SECONDS, SOURCE_ENV_KEY, copy_to_clipboard,
     current_environment, guess_mime_type, journal_stamp, list_audio_sources, load_config_json,
-    record_for_duration, resolve_api_key, resolve_config_path, resolve_home_dir,
-    resolve_journal_dir, run_hotkey_daemon, transcribe_audio_capture,
+    play_completion_sound, record_for_duration, resolve_api_key, resolve_config_path,
+    resolve_home_dir, resolve_journal_dir, run_hotkey_daemon, transcribe_audio_capture,
 };
 
 enum CliCommand {
@@ -66,7 +66,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         voicetotext_linux_core::append_transcript_to_journal(&journal_dir, &stamp, &transcript)?;
 
     match copy_to_clipboard(&transcript) {
-        Ok(method) => eprintln!("copied transcript to clipboard via {:?}", method),
+        Ok(method) => {
+            eprintln!("copied transcript to clipboard via {:?}", method);
+            if let Err(error) = play_completion_sound() {
+                eprintln!("warning: failed to play completion sound: {error}");
+            }
+        }
         Err(ClipboardCopyError::NoSupportedCommand) => {
             eprintln!("warning: no supported clipboard command found; transcript was not copied")
         }

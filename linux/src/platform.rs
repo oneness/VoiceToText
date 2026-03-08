@@ -22,6 +22,12 @@ pub enum ClipboardCopyMethod {
     Xsel,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionSoundMethod {
+    PwPlayFile,
+}
+const COMPLETION_SOUND_RELATIVE_PATH: &str = "assets/completion.oga";
+
 #[derive(Debug)]
 pub enum ClipboardCopyError {
     NoSupportedCommand,
@@ -60,6 +66,46 @@ impl std::fmt::Display for ClipboardCopyError {
 }
 
 impl std::error::Error for ClipboardCopyError {}
+
+#[derive(Debug)]
+pub enum CompletionSoundError {
+    MissingBundledSound(PathBuf),
+    Io(io::Error),
+    CommandFailed {
+        command: &'static str,
+        status_code: Option<i32>,
+        stderr: String,
+    },
+}
+
+impl std::fmt::Display for CompletionSoundError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingBundledSound(path) => {
+                write!(
+                    f,
+                    "bundled completion sound is missing at {}",
+                    path.display()
+                )
+            }
+            Self::Io(error) => write!(f, "{error}"),
+            Self::CommandFailed {
+                command,
+                status_code,
+                stderr,
+            } => {
+                write!(
+                    f,
+                    "{command} failed with status {:?}: {}",
+                    status_code,
+                    stderr.trim()
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for CompletionSoundError {}
 
 pub fn resolve_home_dir(environment: &[(impl AsRef<str>, impl AsRef<str>)]) -> Option<PathBuf> {
     env_value(environment, "HOME").map(PathBuf::from)
@@ -153,6 +199,20 @@ pub fn copy_to_clipboard(text: &str) -> Result<ClipboardCopyMethod, ClipboardCop
     }
 }
 
+pub fn play_completion_sound() -> Result<CompletionSoundMethod, CompletionSoundError> {
+    let sound_path = bundled_completion_sound_path();
+    if !sound_path.exists() {
+        return Err(CompletionSoundError::MissingBundledSound(sound_path));
+    }
+
+    run_sound_file_command(
+        "pw-play",
+        &["--media-role", "Notification", "--volume", "0.65"],
+        &sound_path,
+    )?;
+    Ok(CompletionSoundMethod::PwPlayFile)
+}
+
 pub fn guess_mime_type(path: &Path) -> &'static str {
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("m4a") => "audio/m4a",
@@ -225,6 +285,34 @@ fn run_clipboard_command(
     })
 }
 
+fn run_sound_file_command(
+    command: &'static str,
+    args: &[&str],
+    sound_path: &Path,
+) -> Result<(), CompletionSoundError> {
+    let output = match Command::new(command).args(args).arg(sound_path).output() {
+        Ok(output) => output,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(CompletionSoundError::Io(error));
+        }
+        Err(error) => return Err(CompletionSoundError::Io(error)),
+    };
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(CompletionSoundError::CommandFailed {
+        command,
+        status_code: output.status.code(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
+}
+
+fn bundled_completion_sound_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(COMPLETION_SOUND_RELATIVE_PATH)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,6 +382,19 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn bundled_completion_sound_path_points_to_asset_file() {
+        let path = bundled_completion_sound_path();
+        assert!(path.ends_with("assets/completion.oga"));
+    }
+
+    #[test]
+    fn bundled_completion_sound_path_is_inside_manifest_dir() {
+        let path = bundled_completion_sound_path();
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert!(path.starts_with(manifest_dir));
     }
 
     fn unique_temp_dir() -> PathBuf {

@@ -1,0 +1,7 @@
+Bundled completion sound:
+- File: completion.oga
+- Source: freedesktop sound theme, dialog-information.oga
+- Source package observed on this machine: sound-theme-freedesktop-0.8
+
+If this project is distributed outside local use, verify and preserve the
+upstream asset license terms.

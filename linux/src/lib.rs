@@ -21,9 +21,10 @@ pub use hotkey_daemon::{
 };
 pub use journal::{journal_file_name, render_journal_entry};
 pub use platform::{
-    ClipboardCopyError, ClipboardCopyMethod, JournalStamp, append_transcript_to_journal,
-    copy_to_clipboard, current_environment, guess_mime_type, journal_stamp, load_config_json,
-    resolve_home_dir, resolve_journal_dir,
+    ClipboardCopyError, ClipboardCopyMethod, CompletionSoundError, CompletionSoundMethod,
+    JournalStamp, append_transcript_to_journal, copy_to_clipboard, current_environment,
+    guess_mime_type, journal_stamp, load_config_json, play_completion_sound, resolve_home_dir,
+    resolve_journal_dir,
 };
 pub use recorder::{
     AudioSource, DEFAULT_RECORD_SECONDS, PwRecordCommand, PwRecordRecorder, RecorderError,
