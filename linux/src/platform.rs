@@ -1,0 +1,308 @@
+use std::env;
+use std::fs;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+
+use chrono::{DateTime, Local};
+
+use crate::{journal_file_name, render_journal_entry};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JournalStamp {
+    pub file_date: String,
+    pub header_date: String,
+    pub time_stamp: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardCopyMethod {
+    WlCopy,
+    Xclip,
+    Xsel,
+}
+
+#[derive(Debug)]
+pub enum ClipboardCopyError {
+    NoSupportedCommand,
+    Io(io::Error),
+    CommandFailed {
+        command: &'static str,
+        status_code: Option<i32>,
+        stderr: String,
+    },
+}
+
+impl std::fmt::Display for ClipboardCopyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoSupportedCommand => {
+                write!(
+                    f,
+                    "no supported clipboard command found (tried wl-copy, xclip, xsel)"
+                )
+            }
+            Self::Io(error) => write!(f, "{error}"),
+            Self::CommandFailed {
+                command,
+                status_code,
+                stderr,
+            } => {
+                write!(
+                    f,
+                    "{command} failed with status {:?}: {}",
+                    status_code,
+                    stderr.trim()
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ClipboardCopyError {}
+
+pub fn resolve_home_dir(environment: &[(impl AsRef<str>, impl AsRef<str>)]) -> Option<PathBuf> {
+    env_value(environment, "HOME").map(PathBuf::from)
+}
+
+pub fn resolve_journal_dir(
+    environment: &[(impl AsRef<str>, impl AsRef<str>)],
+    home_dir: &Path,
+) -> PathBuf {
+    let documents_dir = env_value(environment, "XDG_DOCUMENTS_DIR")
+        .map(|value| expand_home(&value, home_dir))
+        .unwrap_or_else(|| home_dir.join("Documents"));
+
+    documents_dir.join("VoiceToText")
+}
+
+pub fn load_config_json(path: &Path) -> io::Result<Option<String>> {
+    match fs::read_to_string(path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+pub fn journal_stamp(now: DateTime<Local>) -> JournalStamp {
+    JournalStamp {
+        file_date: now.format("%Y-%m-%d").to_string(),
+        header_date: now.format("%B %-d, %Y").to_string(),
+        time_stamp: now.format("%-I:%M %p").to_string(),
+    }
+}
+
+pub fn append_transcript_to_journal(
+    journal_dir: &Path,
+    stamp: &JournalStamp,
+    text: &str,
+) -> io::Result<PathBuf> {
+    fs::create_dir_all(journal_dir)?;
+
+    let journal_path = journal_dir.join(journal_file_name(&stamp.file_date));
+    let existing = load_config_json(&journal_path)?;
+    let rendered = render_journal_entry(
+        existing.as_deref(),
+        &stamp.header_date,
+        &stamp.time_stamp,
+        text,
+    );
+
+    fs::write(&journal_path, rendered)?;
+    Ok(journal_path)
+}
+
+pub fn copy_to_clipboard(text: &str) -> Result<ClipboardCopyMethod, ClipboardCopyError> {
+    let candidates = [
+        (
+            ClipboardCopyMethod::WlCopy,
+            "wl-copy",
+            vec!["--type", "text/plain"],
+        ),
+        (
+            ClipboardCopyMethod::Xclip,
+            "xclip",
+            vec!["-selection", "clipboard"],
+        ),
+        (
+            ClipboardCopyMethod::Xsel,
+            "xsel",
+            vec!["--clipboard", "--input"],
+        ),
+    ];
+
+    let mut saw_supported_command = false;
+
+    for (method, command, args) in candidates {
+        match run_clipboard_command(command, &args, text) {
+            Ok(()) => return Ok(method),
+            Err(ClipboardCopyError::NoSupportedCommand) => continue,
+            Err(error) => {
+                saw_supported_command = true;
+                if !matches!(error, ClipboardCopyError::NoSupportedCommand) {
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    if saw_supported_command {
+        Err(ClipboardCopyError::NoSupportedCommand)
+    } else {
+        Err(ClipboardCopyError::NoSupportedCommand)
+    }
+}
+
+pub fn guess_mime_type(path: &Path) -> &'static str {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("m4a") => "audio/m4a",
+        Some("mp3") => "audio/mpeg",
+        Some("wav") => "audio/wav",
+        Some("webm") => "audio/webm",
+        Some("ogg") => "audio/ogg",
+        _ => "application/octet-stream",
+    }
+}
+
+pub fn current_environment() -> Vec<(String, String)> {
+    env::vars().collect()
+}
+
+fn env_value(environment: &[(impl AsRef<str>, impl AsRef<str>)], key: &str) -> Option<String> {
+    environment
+        .iter()
+        .find(|(candidate, _)| candidate.as_ref() == key)
+        .map(|(_, value)| value.as_ref().to_string())
+}
+
+fn expand_home(path: &str, home_dir: &Path) -> PathBuf {
+    if path == "~" {
+        return home_dir.to_path_buf();
+    }
+
+    if let Some(stripped) = path.strip_prefix("~/") {
+        return home_dir.join(stripped);
+    }
+
+    PathBuf::from(path)
+}
+
+fn run_clipboard_command(
+    command: &'static str,
+    args: &[&str],
+    text: &str,
+) -> Result<(), ClipboardCopyError> {
+    let mut child = match Command::new(command)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(ClipboardCopyError::NoSupportedCommand);
+        }
+        Err(error) => return Err(ClipboardCopyError::Io(error)),
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(text.as_bytes())
+            .map_err(ClipboardCopyError::Io)?;
+        drop(stdin);
+    }
+
+    let status = child.wait().map_err(ClipboardCopyError::Io)?;
+    if status.success() {
+        return Ok(());
+    }
+
+    Err(ClipboardCopyError::CommandFailed {
+        command,
+        status_code: status.code(),
+        stderr: String::new(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn journal_dir_uses_xdg_documents_when_present() {
+        let environment = [("XDG_DOCUMENTS_DIR", "~/Files/Documents")];
+        let path = resolve_journal_dir(&environment, Path::new("/home/tester"));
+
+        assert_eq!(
+            path,
+            PathBuf::from("/home/tester/Files/Documents/VoiceToText")
+        );
+    }
+
+    #[test]
+    fn journal_dir_defaults_to_home_documents() {
+        let environment: [(&str, &str); 0] = [];
+        let path = resolve_journal_dir(&environment, Path::new("/home/tester"));
+
+        assert_eq!(path, PathBuf::from("/home/tester/Documents/VoiceToText"));
+    }
+
+    #[test]
+    fn append_transcript_creates_new_markdown_file() {
+        let temp_dir = unique_temp_dir();
+        let stamp = JournalStamp {
+            file_date: "2026-03-07".to_string(),
+            header_date: "March 7, 2026".to_string(),
+            time_stamp: "9:41 AM".to_string(),
+        };
+
+        let journal_path = append_transcript_to_journal(&temp_dir, &stamp, "First entry").unwrap();
+        let contents = fs::read_to_string(journal_path).unwrap();
+
+        assert_eq!(
+            contents,
+            "# Transcriptions - March 7, 2026\n\n## 9:41 AM\n\nFirst entry\n\n---\n\n"
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn append_transcript_appends_to_existing_file() {
+        let temp_dir = unique_temp_dir();
+        let initial_stamp = JournalStamp {
+            file_date: "2026-03-07".to_string(),
+            header_date: "March 7, 2026".to_string(),
+            time_stamp: "9:41 AM".to_string(),
+        };
+        let second_stamp = JournalStamp {
+            file_date: "2026-03-07".to_string(),
+            header_date: "March 7, 2026".to_string(),
+            time_stamp: "9:45 AM".to_string(),
+        };
+
+        let journal_path =
+            append_transcript_to_journal(&temp_dir, &initial_stamp, "First entry").unwrap();
+        append_transcript_to_journal(&temp_dir, &second_stamp, "Second entry").unwrap();
+
+        let contents = fs::read_to_string(journal_path).unwrap();
+        assert_eq!(
+            contents,
+            "# Transcriptions - March 7, 2026\n\n## 9:41 AM\n\nFirst entry\n\n---\n\n## 9:45 AM\n\nSecond entry\n\n---\n\n"
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    fn unique_temp_dir() -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = env::temp_dir().join(format!("voicetotext-linux-test-{suffix}"));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+}
