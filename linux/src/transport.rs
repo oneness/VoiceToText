@@ -21,7 +21,7 @@ impl std::fmt::Display for TransportError {
 
 impl std::error::Error for TransportError {}
 
-pub fn execute_http_request(request: &HttpRequest) -> Result<String, TransportError> {
+pub fn execute_http_request(request: HttpRequest) -> Result<String, TransportError> {
     let client = Client::new();
     let mut builder = client.post(&request.url);
 
@@ -30,7 +30,7 @@ pub fn execute_http_request(request: &HttpRequest) -> Result<String, TransportEr
     }
 
     let response = builder
-        .body(request.body.clone())
+        .body(request.body)
         .send()
         .map_err(TransportError::Request)?;
 

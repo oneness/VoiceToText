@@ -37,8 +37,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let home_dir = resolve_home_dir(&environment).ok_or("HOME is not set")?;
     let config_path = resolve_config_path(&environment, &home_dir);
     let config_json = load_config_json(&config_path)?;
-    let api_key = resolve_api_key(&environment, config_json.as_deref())
-        .ok_or("Groq API key not configured")?;
+    let api_key = resolve_api_key(&environment, config_json.as_deref()).ok_or_else(|| {
+        format!(
+            "Groq API key not configured. Set GROQ_API_KEY or create {}",
+            config_path.display()
+        )
+    })?;
 
     if matches!(command, CliCommand::Daemon) {
         let runtime = tokio::runtime::Builder::new_current_thread()

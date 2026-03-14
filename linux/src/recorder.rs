@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::AudioCapture;
@@ -13,8 +13,12 @@ pub const SOURCE_ENV_KEY: &str = "VOICETOTEXT_SOURCE";
 #[derive(Debug)]
 pub enum RecorderError {
     Spawn(io::Error),
+    EncoderMissing(&'static str),
+    EncoderSpawn(io::Error),
     Signal(io::Error),
     Wait(io::Error),
+    EncoderWait(io::Error),
+    EncoderFailed(ExitStatus),
     MissingOutput(PathBuf),
     Read(io::Error),
 }
@@ -23,10 +27,16 @@ impl std::fmt::Display for RecorderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Spawn(error) => write!(f, "failed to start pw-record: {error}"),
+            Self::EncoderMissing(program) => {
+                write!(f, "required audio encoder is not installed: {program}")
+            }
+            Self::EncoderSpawn(error) => write!(f, "failed to start ffmpeg encoder: {error}"),
             Self::Signal(error) => write!(f, "failed to stop pw-record: {error}"),
             Self::Wait(error) => write!(f, "failed while waiting for pw-record: {error}"),
+            Self::EncoderWait(error) => write!(f, "failed while waiting for ffmpeg: {error}"),
+            Self::EncoderFailed(status) => write!(f, "ffmpeg exited unsuccessfully: {status}"),
             Self::MissingOutput(path) => {
-                write!(f, "pw-record did not produce output at {}", path.display())
+                write!(f, "recording pipeline did not produce output at {}", path.display())
             }
             Self::Read(error) => write!(f, "failed to read recorded audio: {error}"),
         }
@@ -42,15 +52,16 @@ pub struct PwRecordCommand {
 }
 
 impl PwRecordCommand {
-    pub fn for_output(output_path: &Path, target: Option<&str>) -> Self {
+    pub fn for_stdout_raw(target: Option<&str>) -> Self {
         let mut args = vec![
-            output_path.display().to_string(),
+            "-".to_string(),
             "--rate".to_string(),
             "16000".to_string(),
             "--channels".to_string(),
             "1".to_string(),
             "--format".to_string(),
             "s16".to_string(),
+            "--raw".to_string(),
         ];
 
         if let Some(target) = target.filter(|value| !value.trim().is_empty()) {
@@ -65,8 +76,43 @@ impl PwRecordCommand {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfmpegEncodeCommand {
+    pub program: &'static str,
+    pub args: Vec<String>,
+}
+
+impl FfmpegEncodeCommand {
+    pub fn for_output(output_path: &Path) -> Self {
+        Self {
+            program: "ffmpeg",
+            args: vec![
+                "-f".to_string(),
+                "s16le".to_string(),
+                "-ar".to_string(),
+                "16000".to_string(),
+                "-ac".to_string(),
+                "1".to_string(),
+                "-i".to_string(),
+                "pipe:0".to_string(),
+                "-c:a".to_string(),
+                "libopus".to_string(),
+                "-b:a".to_string(),
+                "16k".to_string(),
+                "-application".to_string(),
+                "voip".to_string(),
+                "-f".to_string(),
+                "ogg".to_string(),
+                "-y".to_string(),
+                output_path.display().to_string(),
+            ],
+        }
+    }
+}
+
 pub struct PwRecordRecorder {
-    child: Child,
+    pw_record: Child,
+    ffmpeg: Child,
     output_path: PathBuf,
 }
 
@@ -80,21 +126,60 @@ impl PwRecordRecorder {
         output_path: PathBuf,
         target: Option<&str>,
     ) -> Result<Self, RecorderError> {
-        let command = PwRecordCommand::for_output(&output_path, target);
-        let child = Command::new(command.program)
-            .args(&command.args)
+        let record_command = PwRecordCommand::for_stdout_raw(target);
+        let mut pw_record = Command::new(record_command.program)
+            .args(&record_command.args)
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
             .map_err(RecorderError::Spawn)?;
 
-        Ok(Self { child, output_path })
+        let pw_stdout = match pw_record.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                let _ = pw_record.kill();
+                let _ = pw_record.wait();
+                return Err(RecorderError::Spawn(io::Error::other(
+                    "failed to capture pw-record stdout",
+                )));
+            }
+        };
+
+        let encode_command = FfmpegEncodeCommand::for_output(&output_path);
+        let ffmpeg = match Command::new(encode_command.program)
+            .args(&encode_command.args)
+            .stdin(Stdio::from(pw_stdout))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(error) => {
+                let _ = pw_record.kill();
+                let _ = pw_record.wait();
+                return Err(match error.kind() {
+                    io::ErrorKind::NotFound => RecorderError::EncoderMissing("ffmpeg"),
+                    _ => RecorderError::EncoderSpawn(error),
+                });
+            }
+        };
+
+        Ok(Self {
+            pw_record,
+            ffmpeg,
+            output_path,
+        })
     }
 
     pub fn stop(mut self) -> Result<AudioCapture, RecorderError> {
-        send_sigint(self.child.id()).map_err(RecorderError::Signal)?;
-        self.child.wait().map_err(RecorderError::Wait)?;
+        send_sigint(self.pw_record.id()).map_err(RecorderError::Signal)?;
+        self.pw_record.wait().map_err(RecorderError::Wait)?;
+
+        let ffmpeg_status = self.ffmpeg.wait().map_err(RecorderError::EncoderWait)?;
+        if !ffmpeg_status.success() {
+            return Err(RecorderError::EncoderFailed(ffmpeg_status));
+        }
 
         if !self.output_path.exists() {
             return Err(RecorderError::MissingOutput(self.output_path));
@@ -105,11 +190,18 @@ impl PwRecordRecorder {
             .output_path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("recording.wav")
+            .unwrap_or("recording.ogg")
             .to_string();
+        let mime_type = crate::guess_mime_type(&self.output_path);
+        eprintln!(
+            "recording saved: path={} mime={} bytes={}",
+            self.output_path.display(),
+            mime_type,
+            bytes.len()
+        );
         Ok(AudioCapture::new(
             file_name,
-            "audio/wav",
+            mime_type,
             bytes,
             Some(self.output_path),
         ))
@@ -128,7 +220,7 @@ pub fn temp_recording_path() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    env::temp_dir().join(format!("voicetotext-recording-{suffix}.wav"))
+    env::temp_dir().join(format!("voicetotext-recording-{suffix}.ogg"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -226,39 +318,39 @@ mod tests {
 
     #[test]
     fn pw_record_command_matches_expected_audio_settings() {
-        let output = Path::new("/tmp/test.wav");
-        let command = PwRecordCommand::for_output(output, None);
+        let command = PwRecordCommand::for_stdout_raw(None);
 
         assert_eq!(command.program, "pw-record");
         assert_eq!(
             command.args,
             vec![
-                "/tmp/test.wav",
+                "-",
                 "--rate",
                 "16000",
                 "--channels",
                 "1",
                 "--format",
                 "s16",
+                "--raw",
             ]
         );
     }
 
     #[test]
     fn pw_record_command_includes_target_when_provided() {
-        let output = Path::new("/tmp/test.wav");
-        let command = PwRecordCommand::for_output(output, Some("alsa_input.test"));
+        let command = PwRecordCommand::for_stdout_raw(Some("alsa_input.test"));
 
         assert_eq!(
             command.args,
             vec![
-                "/tmp/test.wav",
+                "-",
                 "--rate",
                 "16000",
                 "--channels",
                 "1",
                 "--format",
                 "s16",
+                "--raw",
                 "--target",
                 "alsa_input.test",
             ]
@@ -266,9 +358,40 @@ mod tests {
     }
 
     #[test]
-    fn temp_recording_path_uses_wav_extension() {
+    fn ffmpeg_encode_command_matches_expected_audio_settings() {
+        let output = Path::new("/tmp/test.ogg");
+        let command = FfmpegEncodeCommand::for_output(output);
+
+        assert_eq!(command.program, "ffmpeg");
+        assert_eq!(
+            command.args,
+            vec![
+                "-f",
+                "s16le",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "-i",
+                "pipe:0",
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "16k",
+                "-application",
+                "voip",
+                "-f",
+                "ogg",
+                "-y",
+                "/tmp/test.ogg",
+            ]
+        );
+    }
+
+    #[test]
+    fn temp_recording_path_uses_ogg_extension() {
         let path = temp_recording_path();
-        assert_eq!(path.extension().and_then(|ext| ext.to_str()), Some("wav"));
+        assert_eq!(path.extension().and_then(|ext| ext.to_str()), Some("ogg"));
         assert!(
             path.file_name()
                 .and_then(|name| name.to_str())

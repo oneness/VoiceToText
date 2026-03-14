@@ -11,8 +11,8 @@ mod transport;
 pub use config::{Config, parse_api_key_from_config, resolve_api_key, resolve_config_path};
 pub use desktop::{DesktopCapabilities, probe_desktop_capabilities};
 pub use groq::{
-    AudioCapture, DEFAULT_GROQ_MODEL, GROQ_TRANSCRIPTIONS_URL, GroqRequestError,
-    GroqRequestOptions, HttpRequest, build_groq_transcription_request,
+    AudioCapture, DEFAULT_GROQ_MODEL, GROQ_MAX_UPLOAD_BYTES, GROQ_TRANSCRIPTIONS_URL,
+    GroqRequestError, GroqRequestOptions, HttpRequest, build_groq_transcription_request,
     parse_transcription_response,
 };
 pub use hotkey_daemon::{

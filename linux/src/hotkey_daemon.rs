@@ -319,16 +319,16 @@ pub fn transcribe_audio_capture(
     let boundary = format!(
         "Boundary-{}",
         SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
     );
     let request = build_groq_transcription_request(
         audio,
         &crate::GroqRequestOptions::new(api_key),
         &boundary,
     )?;
-    let response_body = execute_http_request(&request)?;
+    let response_body = execute_http_request(request)?;
     let transcript = parse_transcription_response(&response_body)?;
     Ok(transcript)
 }

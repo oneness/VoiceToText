@@ -82,3 +82,19 @@ make access    # open Accessibility settings
 
 ## Repository Docs
 - Current docs: `docs/`
+
+## Linux Config Path
+
+The Linux implementation uses XDG config resolution.
+
+- Default config file: `~/.config/voicetotext/config.json`
+- Override: `VOICETOTEXT_CONFIG_PATH=/absolute/path/to/config.json`
+
+Example:
+
+```bash
+mkdir -p ~/.config/voicetotext
+cat > ~/.config/voicetotext/config.json <<'JSON'
+{"groq_api_key":"your-groq-api-key"}
+JSON
+```

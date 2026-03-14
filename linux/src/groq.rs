@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 pub const GROQ_TRANSCRIPTIONS_URL: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 pub const DEFAULT_GROQ_MODEL: &str = "whisper-large-v3-turbo";
+pub const GROQ_MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioCapture {
@@ -68,6 +69,7 @@ pub enum GroqRequestError {
     MissingApiKey,
     EmptyAudioData,
     EmptyBoundary,
+    AudioTooLarge { request_bytes: usize, max_bytes: usize },
     InvalidResponse,
     EmptyResponseText,
 }
@@ -78,6 +80,13 @@ impl std::fmt::Display for GroqRequestError {
             Self::MissingApiKey => write!(f, "missing Groq API key"),
             Self::EmptyAudioData => write!(f, "audio payload is empty"),
             Self::EmptyBoundary => write!(f, "multipart boundary is empty"),
+            Self::AudioTooLarge {
+                request_bytes,
+                max_bytes,
+            } => write!(
+                f,
+                "audio upload is too large for Groq: request size {request_bytes} bytes exceeds {max_bytes} bytes"
+            ),
             Self::InvalidResponse => write!(f, "invalid transcription response"),
             Self::EmptyResponseText => write!(f, "transcription response text was empty"),
         }
@@ -91,16 +100,13 @@ pub fn build_groq_transcription_request(
     options: &GroqRequestOptions,
     boundary: &str,
 ) -> Result<HttpRequest, GroqRequestError> {
-    if options.api_key.trim().is_empty() {
-        return Err(GroqRequestError::MissingApiKey);
-    }
-
-    if audio.bytes.is_empty() {
-        return Err(GroqRequestError::EmptyAudioData);
-    }
-
-    if boundary.trim().is_empty() {
-        return Err(GroqRequestError::EmptyBoundary);
+    validate_request_inputs(audio, options, boundary)?;
+    let request_bytes = estimated_request_size(audio, options, boundary)?;
+    if request_bytes > GROQ_MAX_UPLOAD_BYTES {
+        return Err(GroqRequestError::AudioTooLarge {
+            request_bytes,
+            max_bytes: GROQ_MAX_UPLOAD_BYTES,
+        });
     }
 
     let mut body = Vec::new();
@@ -165,6 +171,56 @@ fn append_text(body: &mut Vec<u8>, text: &str) {
     body.extend_from_slice(text.as_bytes());
 }
 
+fn validate_request_inputs(
+    audio: &AudioCapture,
+    options: &GroqRequestOptions,
+    boundary: &str,
+) -> Result<(), GroqRequestError> {
+    if options.api_key.trim().is_empty() {
+        return Err(GroqRequestError::MissingApiKey);
+    }
+
+    if audio.bytes.is_empty() {
+        return Err(GroqRequestError::EmptyAudioData);
+    }
+
+    if boundary.trim().is_empty() {
+        return Err(GroqRequestError::EmptyBoundary);
+    }
+
+    Ok(())
+}
+
+fn estimated_request_size(
+    audio: &AudioCapture,
+    options: &GroqRequestOptions,
+    boundary: &str,
+) -> Result<usize, GroqRequestError> {
+    validate_request_inputs(audio, options, boundary)?;
+    Ok(multipart_overhead_len(
+        &audio.file_name,
+        &audio.mime_type,
+        &options.model,
+        boundary,
+    ) + audio.bytes.len())
+}
+
+fn multipart_overhead_len(file_name: &str, mime_type: &str, model: &str, boundary: &str) -> usize {
+    (format!("--{boundary}\r\n")).len()
+        + (format!(
+            "Content-Disposition: form-data; name=\"file\"; filename=\"{}\"\r\n",
+            file_name
+        ))
+        .len()
+        + (format!("Content-Type: {mime_type}\r\n\r\n")).len()
+        + "\r\n".len()
+        + (format!("--{boundary}\r\n")).len()
+        + "Content-Disposition: form-data; name=\"model\"\r\n\r\n".len()
+        + model.len()
+        + "\r\n".len()
+        + (format!("--{boundary}--\r\n")).len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +266,28 @@ mod tests {
             build_groq_transcription_request(&audio, &options, "Boundary-Test").unwrap_err();
 
         assert_eq!(error, GroqRequestError::MissingApiKey);
+    }
+
+    #[test]
+    fn request_builder_rejects_oversized_audio() {
+        let audio = AudioCapture::new(
+            "clip.wav",
+            "audio/wav",
+            vec![0u8; GROQ_MAX_UPLOAD_BYTES],
+            None,
+        );
+        let options = GroqRequestOptions::new("secret-key");
+
+        let error =
+            build_groq_transcription_request(&audio, &options, "Boundary-Test").unwrap_err();
+
+        assert!(matches!(
+            error,
+            GroqRequestError::AudioTooLarge {
+                request_bytes,
+                max_bytes: GROQ_MAX_UPLOAD_BYTES,
+            } if request_bytes > GROQ_MAX_UPLOAD_BYTES
+        ));
     }
 
     #[test]
