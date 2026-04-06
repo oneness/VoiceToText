@@ -36,7 +36,11 @@ impl std::fmt::Display for RecorderError {
             Self::EncoderWait(error) => write!(f, "failed while waiting for ffmpeg: {error}"),
             Self::EncoderFailed(status) => write!(f, "ffmpeg exited unsuccessfully: {status}"),
             Self::MissingOutput(path) => {
-                write!(f, "recording pipeline did not produce output at {}", path.display())
+                write!(
+                    f,
+                    "recording pipeline did not produce output at {}",
+                    path.display()
+                )
             }
             Self::Read(error) => write!(f, "failed to read recorded audio: {error}"),
         }

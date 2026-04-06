@@ -69,7 +69,10 @@ pub enum GroqRequestError {
     MissingApiKey,
     EmptyAudioData,
     EmptyBoundary,
-    AudioTooLarge { request_bytes: usize, max_bytes: usize },
+    AudioTooLarge {
+        request_bytes: usize,
+        max_bytes: usize,
+    },
     InvalidResponse,
     EmptyResponseText,
 }
@@ -197,12 +200,10 @@ fn estimated_request_size(
     boundary: &str,
 ) -> Result<usize, GroqRequestError> {
     validate_request_inputs(audio, options, boundary)?;
-    Ok(multipart_overhead_len(
-        &audio.file_name,
-        &audio.mime_type,
-        &options.model,
-        boundary,
-    ) + audio.bytes.len())
+    Ok(
+        multipart_overhead_len(&audio.file_name, &audio.mime_type, &options.model, boundary)
+            + audio.bytes.len(),
+    )
 }
 
 fn multipart_overhead_len(file_name: &str, mime_type: &str, model: &str, boundary: &str) -> usize {
