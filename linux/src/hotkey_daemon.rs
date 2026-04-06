@@ -11,6 +11,7 @@ use ashpd::{
 use futures_util::StreamExt;
 use tokio::sync::{mpsc, watch};
 
+use crate::autopaste::{AutoPasteController, AutoPasteStatus};
 use crate::{
     AppState, AudioCapture, ClipboardCopyError, CompletionSoundError, DesktopCapabilities,
     PwRecordRecorder, append_transcript_to_journal, build_groq_transcription_request,
@@ -125,6 +126,7 @@ pub async fn run_hotkey_daemon_with_control(
     eprintln!("registering host app id: {HOST_APP_ID}");
     register_host_app(app_id).await?;
     let journal_dir = resolve_journal_dir(environment, &home_dir);
+    let mut auto_paste_controller = AutoPasteController::new(environment);
 
     eprintln!("creating global shortcuts session...");
     let global_shortcuts = GlobalShortcuts::new().await?;
@@ -190,6 +192,7 @@ pub async fn run_hotkey_daemon_with_control(
                     eprintln!("command: toggle recording (global shortcut)");
                     toggle_recording(
                         &mut active_recording,
+                        &mut auto_paste_controller,
                         &event_sender,
                         api_key,
                         &journal_dir,
@@ -208,6 +211,7 @@ pub async fn run_hotkey_daemon_with_control(
                         eprintln!("command: toggle recording (tray)");
                         toggle_recording(
                             &mut active_recording,
+                            &mut auto_paste_controller,
                             &event_sender,
                             api_key,
                             &journal_dir,
@@ -270,7 +274,7 @@ fn handle_completed_recording(
     let stamp = journal_stamp(chrono::Local::now());
     let journal_path = append_transcript_to_journal(journal_dir, &stamp, &transcript)?;
 
-    match copy_to_clipboard(&transcript) {
+    let clipboard_ready = match copy_to_clipboard(&transcript) {
         Ok(method) => {
             eprintln!("copied transcript to clipboard via {:?}", method);
             match play_completion_sound() {
@@ -280,17 +284,23 @@ fn handle_completed_recording(
                 }
                 Err(error) => eprintln!("warning: failed to play completion sound: {error}"),
             }
+            true
         }
         Err(ClipboardCopyError::NoSupportedCommand) => {
-            eprintln!("warning: no supported clipboard command found; transcript was not copied")
+            eprintln!("warning: no supported clipboard command found; transcript was not copied");
+            false
         }
-        Err(error) => eprintln!("warning: failed to copy transcript to clipboard: {error}"),
-    }
+        Err(error) => {
+            eprintln!("warning: failed to copy transcript to clipboard: {error}");
+            false
+        }
+    };
 
     eprintln!("journal: {}", journal_path.display());
     println!("{transcript}");
     Ok(CompletedRecordingOutcome {
         transcript,
+        clipboard_ready,
         journal_path,
     })
 }
@@ -298,6 +308,7 @@ fn handle_completed_recording(
 #[derive(Debug)]
 struct CompletedRecordingOutcome {
     transcript: String,
+    clipboard_ready: bool,
     #[allow(dead_code)]
     journal_path: PathBuf,
 }
@@ -321,6 +332,7 @@ fn send_daemon_event(
 
 async fn toggle_recording(
     active_recording: &mut Option<PwRecordRecorder>,
+    auto_paste_controller: &mut AutoPasteController,
     event_sender: &Option<mpsc::UnboundedSender<DaemonEvent>>,
     api_key: &str,
     journal_dir: &PathBuf,
@@ -352,6 +364,16 @@ async fn toggle_recording(
 
             match result {
                 Ok(outcome) => {
+                    if outcome.clipboard_ready {
+                        match auto_paste_controller.paste_clipboard().await {
+                            Ok(AutoPasteStatus::Pasted | AutoPasteStatus::Skipped) => {}
+                            Err(error) => {
+                                let message = format!("auto-paste unavailable: {error}");
+                                eprintln!("warning: {message}");
+                                send_daemon_event(event_sender, DaemonEvent::Warning(message));
+                            }
+                        }
+                    }
                     send_daemon_event(
                         event_sender,
                         DaemonEvent::TranscriptReady(outcome.transcript),
@@ -444,6 +466,7 @@ mod tests {
     fn completed_recording_outcome_keeps_journal_path() {
         let outcome = CompletedRecordingOutcome {
             transcript: "hello".to_string(),
+            clipboard_ready: true,
             journal_path: PathBuf::from("/tmp/journal.md"),
         };
 
