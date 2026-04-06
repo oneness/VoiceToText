@@ -9,7 +9,7 @@ use voicetotext_linux_core::{
     AudioCapture, ClipboardCopyError, DEFAULT_RECORD_SECONDS, SOURCE_ENV_KEY, copy_to_clipboard,
     current_environment, guess_mime_type, journal_stamp, list_audio_sources, load_config_json,
     play_completion_sound, record_for_duration, resolve_api_key, resolve_config_path,
-    resolve_home_dir, resolve_journal_dir, run_hotkey_daemon, transcribe_audio_capture,
+    resolve_home_dir, resolve_journal_dir, run_tray_daemon, transcribe_audio_capture,
 };
 
 enum CliCommand {
@@ -48,7 +48,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
-        runtime.block_on(run_hotkey_daemon(&environment, &api_key))?;
+        runtime.block_on(run_tray_daemon(&environment, &api_key))?;
         return Ok(());
     }
 

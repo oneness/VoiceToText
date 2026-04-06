@@ -7,6 +7,7 @@ mod platform;
 mod recorder;
 mod state;
 mod transport;
+mod tray_app;
 
 pub use config::{Config, parse_api_key_from_config, resolve_api_key, resolve_config_path};
 pub use desktop::{DesktopCapabilities, probe_desktop_capabilities};
@@ -16,15 +17,16 @@ pub use groq::{
     parse_transcription_response,
 };
 pub use hotkey_daemon::{
-    HotkeyDaemonError, TOGGLE_SHORTCUT_DESCRIPTION, TOGGLE_SHORTCUT_ID, TOGGLE_SHORTCUT_TRIGGER,
-    run_hotkey_daemon, transcribe_audio_capture,
+    DaemonCommand, DaemonEvent, HOST_APP_ID, HotkeyDaemonError, TOGGLE_SHORTCUT_DESCRIPTION,
+    TOGGLE_SHORTCUT_ID, TOGGLE_SHORTCUT_TRIGGER, run_hotkey_daemon, run_hotkey_daemon_with_control,
+    transcribe_audio_capture,
 };
 pub use journal::{journal_file_name, render_journal_entry};
 pub use platform::{
     ClipboardCopyError, ClipboardCopyMethod, CompletionSoundError, CompletionSoundMethod,
     JournalStamp, append_transcript_to_journal, copy_to_clipboard, current_environment,
-    guess_mime_type, journal_stamp, load_config_json, play_completion_sound, resolve_home_dir,
-    resolve_journal_dir,
+    guess_mime_type, install_linux_icon_assets, journal_stamp, load_config_json,
+    play_completion_sound, resolve_home_dir, resolve_journal_dir,
 };
 pub use recorder::{
     AudioSource, DEFAULT_RECORD_SECONDS, PwRecordCommand, PwRecordRecorder, RecorderError,
@@ -32,3 +34,4 @@ pub use recorder::{
 };
 pub use state::AppState;
 pub use transport::{TransportError, execute_http_request};
+pub use tray_app::run_tray_daemon;

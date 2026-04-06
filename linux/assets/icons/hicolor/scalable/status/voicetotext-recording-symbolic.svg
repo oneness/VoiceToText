@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="currentColor">
+    <rect x="4.25" y="1.5" width="5.25" height="1.75" rx="0.875"/>
+    <rect x="2.5" y="4.25" width="8.75" height="1.75" rx="0.875"/>
+    <rect x="3.75" y="7" width="6.25" height="1.75" rx="0.875"/>
+    <rect x="1.75" y="9.75" width="10.5" height="1.75" rx="0.875"/>
+    <path d="M4.5 12.5h5.5L8.35 14H6.15z"/>
+    <rect x="5.55" y="14" width="3.4" height="1.25" rx="0.2"/>
+    <circle cx="12.5" cy="3.5" r="2"/>
+  </g>
+</svg>

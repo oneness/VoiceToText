@@ -27,6 +27,18 @@ pub enum CompletionSoundMethod {
     PwPlayFile,
 }
 const COMPLETION_SOUND_RELATIVE_PATH: &str = "assets/completion.oga";
+const PANEL_ICON_IDLE_RELATIVE_PATH: &str =
+    "assets/icons/hicolor/scalable/status/voicetotext-symbolic.svg";
+const PANEL_ICON_RECORDING_RELATIVE_PATH: &str =
+    "assets/icons/hicolor/scalable/status/voicetotext-recording-symbolic.svg";
+const PANEL_ICON_TRANSCRIBING_RELATIVE_PATH: &str =
+    "assets/icons/hicolor/scalable/status/voicetotext-transcribing-symbolic.svg";
+const APP_ICON_128_RELATIVE_PATH: &str =
+    "../VoiceToText/Resources/Assets.xcassets/AppIcon.appiconset/icon_128x128.png";
+const APP_ICON_256_RELATIVE_PATH: &str =
+    "../VoiceToText/Resources/Assets.xcassets/AppIcon.appiconset/icon_256x256.png";
+const APP_ICON_512_RELATIVE_PATH: &str =
+    "../VoiceToText/Resources/Assets.xcassets/AppIcon.appiconset/icon_512x512.png";
 
 #[derive(Debug)]
 pub enum ClipboardCopyError {
@@ -213,6 +225,37 @@ pub fn play_completion_sound() -> Result<CompletionSoundMethod, CompletionSoundE
     Ok(CompletionSoundMethod::PwPlayFile)
 }
 
+pub fn install_linux_icon_assets(home_dir: &Path) -> io::Result<PathBuf> {
+    let icon_root = home_dir.join(".local/share/icons");
+
+    install_icon_asset(
+        &bundled_asset_path(APP_ICON_128_RELATIVE_PATH),
+        &icon_root.join("hicolor/128x128/apps/voicetotext.png"),
+    )?;
+    install_icon_asset(
+        &bundled_asset_path(APP_ICON_256_RELATIVE_PATH),
+        &icon_root.join("hicolor/256x256/apps/voicetotext.png"),
+    )?;
+    install_icon_asset(
+        &bundled_asset_path(APP_ICON_512_RELATIVE_PATH),
+        &icon_root.join("hicolor/512x512/apps/voicetotext.png"),
+    )?;
+    install_icon_asset(
+        &bundled_asset_path(PANEL_ICON_IDLE_RELATIVE_PATH),
+        &icon_root.join("hicolor/scalable/status/voicetotext-symbolic.svg"),
+    )?;
+    install_icon_asset(
+        &bundled_asset_path(PANEL_ICON_RECORDING_RELATIVE_PATH),
+        &icon_root.join("hicolor/scalable/status/voicetotext-recording-symbolic.svg"),
+    )?;
+    install_icon_asset(
+        &bundled_asset_path(PANEL_ICON_TRANSCRIBING_RELATIVE_PATH),
+        &icon_root.join("hicolor/scalable/status/voicetotext-transcribing-symbolic.svg"),
+    )?;
+
+    Ok(icon_root)
+}
+
 pub fn guess_mime_type(path: &Path) -> &'static str {
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("m4a") => "audio/m4a",
@@ -310,7 +353,36 @@ fn run_sound_file_command(
 }
 
 fn bundled_completion_sound_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(COMPLETION_SOUND_RELATIVE_PATH)
+    bundled_asset_path(COMPLETION_SOUND_RELATIVE_PATH)
+}
+
+fn bundled_asset_path(relative_path: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(relative_path)
+}
+
+fn install_icon_asset(source_path: &Path, destination_path: &Path) -> io::Result<()> {
+    if !source_path.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("missing icon asset at {}", source_path.display()),
+        ));
+    }
+
+    if let Some(parent) = destination_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let should_copy = match fs::read(destination_path) {
+        Ok(existing) => existing != fs::read(source_path)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => true,
+        Err(error) => return Err(error),
+    };
+
+    if should_copy {
+        fs::copy(source_path, destination_path)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -395,6 +467,26 @@ mod tests {
         let path = bundled_completion_sound_path();
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         assert!(path.starts_with(manifest_dir));
+    }
+
+    #[test]
+    fn install_linux_icon_assets_returns_icon_root() {
+        let temp_home = unique_temp_dir();
+        let icon_root = install_linux_icon_assets(&temp_home).unwrap();
+
+        assert_eq!(icon_root, temp_home.join(".local/share/icons"));
+        assert!(
+            icon_root
+                .join("hicolor/scalable/status/voicetotext-symbolic.svg")
+                .exists()
+        );
+        assert!(
+            icon_root
+                .join("hicolor/512x512/apps/voicetotext.png")
+                .exists()
+        );
+
+        let _ = fs::remove_dir_all(&temp_home);
     }
 
     fn unique_temp_dir() -> PathBuf {

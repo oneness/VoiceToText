@@ -1,7 +1,6 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::Sender;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ashpd::{
@@ -10,13 +9,14 @@ use ashpd::{
     register_host_app,
 };
 use futures_util::StreamExt;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 use crate::{
     AppState, AudioCapture, ClipboardCopyError, CompletionSoundError, DesktopCapabilities,
     PwRecordRecorder, append_transcript_to_journal, build_groq_transcription_request,
-    copy_to_clipboard, execute_http_request, journal_stamp, parse_transcription_response,
-    play_completion_sound, probe_desktop_capabilities, resolve_home_dir, resolve_journal_dir,
+    copy_to_clipboard, execute_http_request, install_linux_icon_assets, journal_stamp,
+    parse_transcription_response, play_completion_sound, probe_desktop_capabilities,
+    resolve_home_dir, resolve_journal_dir,
 };
 
 pub const TOGGLE_SHORTCUT_ID: &str = "toggle-recording";
@@ -29,6 +29,12 @@ pub enum DaemonEvent {
     StateChanged(AppState),
     TranscriptReady(String),
     Warning(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonCommand {
+    ToggleRecording,
+    Shutdown,
 }
 
 #[derive(Debug)]
@@ -98,18 +104,20 @@ pub async fn run_hotkey_daemon(
     environment: &[(String, String)],
     api_key: &str,
 ) -> Result<(), HotkeyDaemonError> {
-    run_hotkey_daemon_with_control(environment, api_key, None, None).await
+    run_hotkey_daemon_with_control(environment, api_key, None, None, None).await
 }
 
 pub async fn run_hotkey_daemon_with_control(
     environment: &[(String, String)],
     api_key: &str,
-    event_sender: Option<Sender<DaemonEvent>>,
+    event_sender: Option<mpsc::UnboundedSender<DaemonEvent>>,
     mut shutdown_receiver: Option<watch::Receiver<bool>>,
+    mut command_receiver: Option<mpsc::UnboundedReceiver<DaemonCommand>>,
 ) -> Result<(), HotkeyDaemonError> {
     let capabilities = probe_desktop_capabilities(environment);
     ensure_daemon_capabilities(&capabilities)?;
     let home_dir = resolve_home_dir(environment).ok_or(HotkeyDaemonError::MissingHomeDir)?;
+    install_linux_icon_assets(&home_dir).map_err(HotkeyDaemonError::DesktopEntry)?;
     ensure_host_desktop_entry(&home_dir).map_err(HotkeyDaemonError::DesktopEntry)?;
     let app_id: AppID = HOST_APP_ID
         .parse()
@@ -179,45 +187,41 @@ pub async fn run_hotkey_daemon_with_control(
                     if event.shortcut_id() != TOGGLE_SHORTCUT_ID {
                         continue;
                     }
-
-                    match active_recording.take() {
-                        None => {
-                            let output_path = crate::temp_recording_path();
-                            let recorder = PwRecordRecorder::start(output_path)?;
-                            eprintln!("recording started");
-                            send_daemon_event(&event_sender, DaemonEvent::StateChanged(AppState::Recording));
-                            active_recording = Some(recorder);
-                        }
-                        Some(recorder) => {
-                            eprintln!("recording stopped, transcribing...");
-                            send_daemon_event(&event_sender, DaemonEvent::StateChanged(AppState::Transcribing));
-                            let audio = recorder.stop()?;
-                            let api_key = api_key.to_string();
-                            let journal_dir = journal_dir.clone();
-                            let result = tokio::task::spawn_blocking(move || {
-                                handle_completed_recording(audio, &api_key, &journal_dir)
-                            })
-                            .await
-                            .map_err(|error| {
-                                HotkeyDaemonError::Journal(std::io::Error::other(error.to_string()))
-                            })?;
-
-                            match result {
-                                Ok(outcome) => {
-                                    send_daemon_event(
-                                        &event_sender,
-                                        DaemonEvent::TranscriptReady(outcome.transcript),
-                                    );
-                                }
-                                Err(error) => {
-                                    let message = error.to_string();
-                                    eprintln!("warning: {message}");
-                                    send_daemon_event(&event_sender, DaemonEvent::Warning(message));
-                                }
-                            }
-
-                            send_daemon_event(&event_sender, DaemonEvent::StateChanged(AppState::Idle));
-                        }
+                    eprintln!("command: toggle recording (global shortcut)");
+                    toggle_recording(
+                        &mut active_recording,
+                        &event_sender,
+                        api_key,
+                        &journal_dir,
+                    )
+                    .await?;
+                }
+            }
+            maybe_command = async {
+                match &mut command_receiver {
+                    Some(receiver) => receiver.recv().await,
+                    None => std::future::pending::<Option<DaemonCommand>>().await,
+                }
+            } => {
+                match maybe_command {
+                    Some(DaemonCommand::ToggleRecording) => {
+                        eprintln!("command: toggle recording (tray)");
+                        toggle_recording(
+                            &mut active_recording,
+                            &event_sender,
+                            api_key,
+                            &journal_dir,
+                        )
+                        .await?;
+                    }
+                    Some(DaemonCommand::Shutdown) => {
+                        eprintln!("received shutdown command, closing session");
+                        stop_active_recording(active_recording.take());
+                        let _ = session.close().await;
+                        return Ok(());
+                    }
+                    None => {
+                        command_receiver = None;
                     }
                 }
             }
@@ -241,7 +245,7 @@ pub(crate) fn ensure_host_desktop_entry(home_dir: &Path) -> std::io::Result<Path
     let current_exe = env::current_exe()?;
     let exec = format!("{} daemon", current_exe.display());
     let desired = format!(
-        "[Desktop Entry]\nType=Application\nVersion=1.0\nName=VoiceToText Linux\nComment=Voice transcription hotkey daemon\nExec={exec}\nTerminal=false\nNoDisplay=true\nCategories=Utility;\nStartupNotify=false\n"
+        "[Desktop Entry]\nType=Application\nVersion=1.0\nName=VoiceToText Linux\nComment=Voice transcription hotkey daemon\nExec={exec}\nIcon=voicetotext\nTerminal=false\nNoDisplay=true\nCategories=Utility;\nStartupNotify=false\n"
     );
 
     let should_write = match fs::read_to_string(&desktop_path) {
@@ -306,10 +310,65 @@ fn stop_active_recording(recorder: Option<PwRecordRecorder>) {
     }
 }
 
-fn send_daemon_event(event_sender: &Option<Sender<DaemonEvent>>, event: DaemonEvent) {
+fn send_daemon_event(
+    event_sender: &Option<mpsc::UnboundedSender<DaemonEvent>>,
+    event: DaemonEvent,
+) {
     if let Some(sender) = event_sender {
         let _ = sender.send(event);
     }
+}
+
+async fn toggle_recording(
+    active_recording: &mut Option<PwRecordRecorder>,
+    event_sender: &Option<mpsc::UnboundedSender<DaemonEvent>>,
+    api_key: &str,
+    journal_dir: &PathBuf,
+) -> Result<(), HotkeyDaemonError> {
+    match active_recording.take() {
+        None => {
+            let output_path = crate::temp_recording_path();
+            let recorder = PwRecordRecorder::start(output_path)?;
+            eprintln!("recording started");
+            send_daemon_event(event_sender, DaemonEvent::StateChanged(AppState::Recording));
+            *active_recording = Some(recorder);
+        }
+        Some(recorder) => {
+            eprintln!("recording stopped, transcribing...");
+            send_daemon_event(
+                event_sender,
+                DaemonEvent::StateChanged(AppState::Transcribing),
+            );
+            let audio = recorder.stop()?;
+            let api_key = api_key.to_string();
+            let journal_dir = journal_dir.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                handle_completed_recording(audio, &api_key, &journal_dir)
+            })
+            .await
+            .map_err(|error| {
+                HotkeyDaemonError::Journal(std::io::Error::other(error.to_string()))
+            })?;
+
+            match result {
+                Ok(outcome) => {
+                    send_daemon_event(
+                        event_sender,
+                        DaemonEvent::TranscriptReady(outcome.transcript),
+                    );
+                }
+                Err(error) => {
+                    let message = error.to_string();
+                    eprintln!("warning: {message}");
+                    send_daemon_event(event_sender, DaemonEvent::Warning(message));
+                }
+            }
+
+            send_daemon_event(event_sender, DaemonEvent::StateChanged(AppState::Idle));
+        }
+    }
+
+    Ok(())
 }
 
 pub fn transcribe_audio_capture(
@@ -319,9 +378,9 @@ pub fn transcribe_audio_capture(
     let boundary = format!(
         "Boundary-{}",
         SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
     );
     let request = build_groq_transcription_request(
         audio,
@@ -370,6 +429,14 @@ mod tests {
         assert_eq!(
             event,
             DaemonEvent::TranscriptReady("hello world".to_string())
+        );
+    }
+
+    #[test]
+    fn daemon_toggle_command_is_stable() {
+        assert_eq!(
+            DaemonCommand::ToggleRecording,
+            DaemonCommand::ToggleRecording
         );
     }
 
