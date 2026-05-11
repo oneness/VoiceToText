@@ -357,7 +357,17 @@ fn bundled_completion_sound_path() -> PathBuf {
 }
 
 fn bundled_asset_path(relative_path: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(relative_path)
+    if cfg!(debug_assertions) {
+        // In dev builds, use CARGO_MANIFEST_DIR for live-editing assets
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(relative_path)
+    } else {
+        // In release builds, resolve relative to the binary's directory
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .unwrap_or_else(|| Path::new(".").to_path_buf());
+        exe_dir.join(relative_path)
+    }
 }
 
 fn install_icon_asset(source_path: &Path, destination_path: &Path) -> io::Result<()> {
@@ -465,8 +475,16 @@ mod tests {
     #[test]
     fn bundled_completion_sound_path_is_inside_manifest_dir() {
         let path = bundled_completion_sound_path();
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        assert!(path.starts_with(manifest_dir));
+        #[cfg(debug_assertions)]
+        {
+            let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+            assert!(path.starts_with(manifest_dir));
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            let exe_dir = std::env::current_exe().unwrap().parent().unwrap();
+            assert!(path.starts_with(exe_dir));
+        }
     }
 
     #[test]
