@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceToText — Instant Dictation for macOS and Linux</title>
+<style>
+  :root {
+    --bg: #fafbfc;
+    --card: #ffffff;
+    --border: #e2e5eb;
+    --text: #1a1d26;
+    --muted: #5c6170;
+    --accent: #3b5bdb;
+    --green: #16a34a;
+    --amber: #d97706;
+    --red: #dc2626;
+    --surface: #f0f2f6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .slide {
+    display: none;
+    position: fixed;
+    inset: 0;
+    justify-content: center;
+    align-items: center;
+    padding: 48px;
+  }
+
+  .slide.active { display: flex; }
+
+  .box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 56px 64px;
+    max-width: 780px;
+    width: 100%;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    text-align: center;
+  }
+
+  .label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-size: 56px;
+    font-weight: 800;
+    letter-spacing: -1.5px;
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+
+  h2 {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 16px;
+  }
+
+  .big {
+    font-size: 22px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .tagline {
+    font-size: 24px;
+    color: var(--muted);
+    margin-bottom: 0;
+  }
+
+  .mono {
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+    font-size: 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 32px;
+    text-align: left;
+    color: var(--text);
+    line-height: 1.8;
+    display: inline-block;
+    margin-top: 16px;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .mono .kw  { color: var(--accent); font-weight: 600; }
+  .mono .str { color: var(--green); }
+  .mono .cm  { color: #94a3b8; }
+  .mono .red { color: var(--red); font-weight: 600; }
+
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 20px 0;
+  }
+
+  .flow-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  .flow-box.hi {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .flow-arrow { color: var(--muted); font-size: 18px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+    text-align: left;
+  }
+
+  th {
+    padding: 10px 16px;
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    text-align: left;
+    margin-top: 20px;
+  }
+
+  .col-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+  }
+
+  .col-box h3 {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+
+  .col-box ul {
+    list-style: none;
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.9;
+  }
+
+  .col-box ul li::before { content: "· "; color: var(--accent); }
+
+  #progress {
+    position: fixed;
+    bottom: 0; left: 0;
+    height: 3px;
+    background: var(--accent);
+    transition: width 0.25s ease;
+    z-index: 100;
+  }
+
+  #controls {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    z-index: 100;
+  }
+
+  #controls button {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  #controls button:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #controls button:disabled { opacity: 0.3; cursor: default; background: var(--card); color: var(--muted); border-color: var(--border); }
+
+  #counter {
+    font-size: 13px;
+    color: var(--muted);
+    min-width: 50px;
+    text-align: center;
+  }
+
+  @media (max-width: 720px) {
+    .box { padding: 36px 28px; }
+    h1 { font-size: 40px; }
+    h2 { font-size: 28px; }
+    .big { font-size: 18px; }
+    .tagline { font-size: 20px; }
+    .mono { font-size: 14px; padding: 16px 20px; }
+    .two-col { grid-template-columns: 1fr; }
+    .flow { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+<div id="controls">
+  <button id="prevBtn" onclick="go(-1)">← Prev</button>
+  <span id="counter"></span>
+  <button id="nextBtn" onclick="go(1)">Next →</button>
+</div>
+
+<!-- ═══ 1. Title ═══ -->
+<section class="slide">
+  <div class="box">
+    <h1>VoiceToText</h1>
+    <p class="tagline">Instant dictation for macOS and Linux.<br>One hotkey. No window. Text appears where you type.</p>
+  </div>
+</section>
+
+<!-- ═══ 2. The Problem ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">why</div>
+    <h2>Typing is slow</h2>
+    <p class="big">Speaking is 3–4× faster than typing.<br>Most dictation tools are heavyweight, cloud-locked, or tied to a specific app.<br><br>VoiceToText is a background utility: press a hotkey, speak, and the text appears in whatever you're already doing.</p>
+  </div>
+</section>
+
+<!-- ═══ 3. The Flow ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">how it works</div>
+    <h2>Four steps</h2>
+    <div class="flow">
+      <div class="flow-box hi">⌥ Space</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">record</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">transcribe</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box hi">paste</div>
+    </div>
+    <p class="big" style="margin-top: 16px;">Press once to start recording. Press again to stop.<br>Text is on your clipboard and pasted automatically.<br>No window. No clicks. Zero friction.</p>
+  </div>
+</section>
+
+<!-- ═══ 4. Two Platforms ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">platforms</div>
+    <h2>macOS + Linux</h2>
+    <div class="two-col">
+      <div class="col-box">
+        <h3>macOS</h3>
+        <ul>
+          <li>Swift + AppKit</li>
+          <li>Menu bar app</li>
+          <li>Option + Space hotkey</li>
+          <li>AVFoundation recording</li>
+          <li>CGEvent auto-paste</li>
+          <li>macOS 14+</li>
+        </ul>
+      </div>
+      <div class="col-box">
+        <h3>Linux</h3>
+        <ul>
+          <li>Rust</li>
+          <li>System tray (SNI)</li>
+          <li>Alt + Space hotkey</li>
+          <li>PipeWire + ffmpeg</li>
+          <li>XDG portal auto-paste</li>
+          <li>GNOME Wayland</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 5. Groq Whisper ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">transcription</div>
+    <h2>Groq Whisper</h2>
+    <p class="big">Both platforms use <strong>whisper-large-v3-turbo</strong> via Groq's API.<br><br>~8× faster inference than the full Whisper model with minimal accuracy loss. Audio is captured at 16 kHz mono — Whisper's native rate — to keep uploads small and latency low.</p>
+    <div class="mono" style="margin-top: 24px; font-size: 15px;">
+      POST api.groq.com/openai/v1/audio/transcriptions<br>
+      model: whisper-large-v3-turbo<br>
+      format: multipart/form-data (.m4a / .ogg)
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 6. macOS Architecture ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">macOS internals</div>
+    <h2>macOS architecture</h2>
+    <table>
+      <tr><th>Component</th><th>Role</th></tr>
+      <tr><td><code>HotkeyManager</code></td><td>NSEvent global monitor for Option+Space</td></tr>
+      <tr><td><code>RecordingManager</code></td><td>AVAudioRecorder → .m4a at 16 kHz mono</td></tr>
+      <tr><td><code>GroqTranscriber</code></td><td>URLSession multipart POST, 30s timeout</td></tr>
+      <tr><td><code>AutoPaster</code></td><td>NSPasteboard + CGEvent Cmd+V synthesis</td></tr>
+      <tr><td><code>TranscriptionJournal</code></td><td>Daily .md log in ~/Documents/VoiceToText/</td></tr>
+      <tr><td><code>StatusItemController</code></td><td>Menu bar icon with state badges</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ═══ 7. Linux Architecture ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">linux internals</div>
+    <h2>Linux architecture</h2>
+    <table>
+      <tr><th>Module</th><th>Role</th></tr>
+      <tr><td><code>hotkey_daemon</code></td><td>Async event loop, XDG GlobalShortcuts portal</td></tr>
+      <tr><td><code>recorder</code></td><td>pw-record | ffmpeg → Opus/OGG at 16 kbps</td></tr>
+      <tr><td><code>groq</code></td><td>Pure request builder + response parser</td></tr>
+      <tr><td><code>transport</code></td><td>reqwest blocking HTTP execution</td></tr>
+      <tr><td><code>autopaste</code></td><td>XDG RemoteDesktop portal → Ctrl+Y keysyms</td></tr>
+      <tr><td><code>tray_app</code></td><td>ksni StatusNotifierItem tray</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ═══ 8. Hotkeys ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">global hotkeys</div>
+    <h2>Platform-specific approach</h2>
+    <div class="two-col">
+      <div class="col-box">
+        <h3>macOS</h3>
+        <ul>
+          <li>NSEvent global monitor</li>
+          <li>Option + Space (keyCode 49)</li>
+          <li>Requires Accessibility permission</li>
+          <li>Works in all apps system-wide</li>
+        </ul>
+      </div>
+      <div class="col-box">
+        <h3>Linux</h3>
+        <ul>
+          <li>XDG GlobalShortcuts portal</li>
+          <li>Alt + Space (preferred)</li>
+          <li>Sandboxed — no special perms</li>
+          <li>Requires xdg-desktop-portal-gnome</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 9. Auto-Paste ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">auto-paste</div>
+    <h2>Platform-specific approach</h2>
+    <div class="two-col">
+      <div class="col-box">
+        <h3>macOS</h3>
+        <ul>
+          <li>NSPasteboard + CGEvent</li>
+          <li>Synthesises Cmd+V</li>
+          <li>Works in all apps</li>
+          <li>Requires Accessibility</li>
+        </ul>
+      </div>
+      <div class="col-box">
+        <h3>Linux</h3>
+        <ul>
+          <li>XDG RemoteDesktop portal</li>
+          <li>Injects Ctrl+Y keysym</li>
+          <li>GNOME Wayland only</li>
+          <li>Restore token cached on disk</li>
+        </ul>
+      </div>
+    </div>
+    <p class="big" style="margin-top: 20px; font-size: 16px;">On unsupported Linux desktops, auto-paste is skipped gracefully — the transcript is still on the clipboard.</p>
+  </div>
+</section>
+
+<!-- ═══ 10. Journal ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">journal</div>
+    <h2>Daily Markdown log</h2>
+    <p class="big">Every transcription is appended to a daily file in <code>~/Documents/VoiceToText/</code>. Both platforms produce identical Markdown.</p>
+    <div class="mono" style="margin-top: 20px; font-size: 15px;">
+      <span class="kw"># Transcriptions - May 31, 2026</span><br><br>
+      <span class="str">## 2:34 PM</span><br>
+      The text you dictated goes here.<br><br>
+      ---
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 11. Configuration ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">configuration</div>
+    <h2>Just an API key</h2>
+    <p class="big">One Groq API key is the only required configuration. Three ways to provide it:</p>
+    <div class="mono" style="margin-top: 20px; font-size: 15px;">
+      <span class="cm"># Environment variable (any platform)</span><br>
+      export GROQ_API_KEY="your-key"<br><br>
+      <span class="cm"># macOS: interactive setup</span><br>
+      make setup<br><br>
+      <span class="cm"># Linux: config file</span><br>
+      ~/.config/voicetotext/config.json
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 12. Design Philosophy ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">design</div>
+    <h2>Zero UI</h2>
+    <p class="big">No window ever opens during normal use.<br>The tray icon and its badge are the entire interface.</p>
+    <table style="margin-top: 24px;">
+      <tr><td><strong>Idle</strong></td><td>Icon in tray — no badge</td></tr>
+      <tr><td><strong>Recording</strong></td><td>Red dot badge (macOS) / attention status (Linux)</td></tr>
+      <tr><td><strong>Transcribing</strong></td><td>Grey pill badge</td></tr>
+      <tr><td><strong>Done</strong></td><td>Completion sound + text pasted</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ═══ 13. Get Started — macOS ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">get started · macOS</div>
+    <h2>macOS quick start</h2>
+    <div class="mono" style="text-align: left; font-size: 15px;">
+      <span class="cm"># 1. Get a Groq API key</span><br>
+      <span class="cm">#    console.groq.com/keys</span><br><br>
+      <span class="cm"># 2. Store it</span><br>
+      make setup<br><br>
+      <span class="cm"># 3. Build and install</span><br>
+      make build<br><br>
+      <span class="cm"># 4. Grant Accessibility permission</span><br>
+      <span class="cm">#    System Settings → Privacy → Accessibility</span><br><br>
+      <span class="cm"># Press Option+Space to record</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 14. Get Started — Linux ═══ -->
+<section class="slide">
+  <div class="box">
+    <div class="label">get started · linux</div>
+    <h2>Linux quick start</h2>
+    <div class="mono" style="text-align: left; font-size: 15px;">
+      <span class="cm"># 1. Install runtime deps</span><br>
+      <span class="cm">#    pipewire ffmpeg wl-clipboard</span><br><br>
+      <span class="cm"># 2. Set your Groq API key</span><br>
+      export GROQ_API_KEY="your-key"<br><br>
+      <span class="cm"># 3. Build</span><br>
+      cd linux && cargo build --release<br><br>
+      <span class="cm"># 4. Run the daemon</span><br>
+      ./target/release/voicetotext daemon<br><br>
+      <span class="cm"># Press Alt+Space to record</span>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  const slides = document.querySelectorAll('.slide');
+  const bar    = document.getElementById('progress');
+  const ctr    = document.getElementById('counter');
+  const prevB  = document.getElementById('prevBtn');
+  const nextB  = document.getElementById('nextBtn');
+  let cur = 0;
+
+  function show(i) {
+    cur = i;
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    bar.style.width = ((i + 1) / slides.length * 100) + '%';
+    ctr.textContent = (i + 1) + ' / ' + slides.length;
+    prevB.disabled = i === 0;
+    nextB.disabled = i === slides.length - 1;
+  }
+
+  window.go = function(d) { show(Math.max(0, Math.min(slides.length - 1, cur + d))); };
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(1); }
+    if (e.key === 'ArrowLeft')                   { e.preventDefault(); go(-1); }
+  });
+
+  show(0);
+})();
+</script>
+</body>
+</html>

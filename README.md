@@ -1,6 +1,11 @@
 # VoiceToText
 
-VoiceToText is a macOS menu bar app that records your voice, transcribes it with Groq Whisper, and auto-pastes the result into the active app.
+Press a hotkey, speak, and the text appears where you're typing. Works on macOS and Linux. No window, no clicks.
+
+## Quick links
+
+- **[Overview](docs/overview.html)** — what it is and how it works (open in browser, space-bar to navigate)
+- **[Architecture](docs/architecture.md)** — internals for both platforms
 
 ## Quick Start
 
@@ -80,8 +85,9 @@ make run       # open built app
 make access    # open Accessibility settings
 ```
 
-## Repository Docs
-- Current docs: `docs/`
+## Linux
+
+See [linux/README.md](linux/README.md) for the full Linux setup guide.
 
 ## Linux Config Path
 
@@ -98,3 +104,13 @@ cat > ~/.config/voicetotext/config.json <<'JSON'
 {"groq_api_key":"your-groq-api-key"}
 JSON
 ```
+
+## Contributing
+
+This project is personal software that I maintain for my own use. I do not accept pull requests.
+
+If it's useful to you: fork it, copy the code, adapt it freely. The only ask is that you keep the copyright notice intact (MIT license).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
