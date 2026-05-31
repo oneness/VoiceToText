@@ -107,3 +107,6 @@ verify_implementation.sh
 .legacy-local/
 linux/target/
 linux/result
+
+# Claude Code local settings
+.claude/
