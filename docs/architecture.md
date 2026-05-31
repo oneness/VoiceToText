@@ -237,6 +237,6 @@ linux/                            Linux Rust crate
     journal.rs                    Pure journal entry renderer
 
 docs/
-  overview.html                   Executive presentation (browser, space-bar to navigate)
+  index.html                      Executive presentation (GitHub Pages, space-bar to navigate)
   architecture.md                 This file
 ```
