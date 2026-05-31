@@ -4,7 +4,7 @@ Press a hotkey, speak, and the text appears where you're typing. Works on macOS 
 
 ## Quick links
 
-- **[Overview](https://oneness.github.io/VoiceToText/)** — what it is and how it works (space-bar to navigate)
+- **[Overview](https://www.birkey.co/VoiceToText/)** — what it is and how it works (space-bar to navigate)
 - **[Architecture](docs/architecture.md)** — internals for both platforms
 
 ## Quick Start
