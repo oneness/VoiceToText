@@ -1,5 +1,8 @@
 use std::env;
+use std::ffi::CString;
 use std::fs;
+use std::io::BufRead;
+use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,7 +16,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::autopaste::{AutoPasteController, AutoPasteStatus};
 use crate::{
-    AppState, AudioCapture, ClipboardCopyError, CompletionSoundError, DesktopCapabilities,
+    AppState, AudioCapture, ClipboardCopyError, CompletionSoundError,
     PwRecordRecorder, append_transcript_to_journal, build_groq_transcription_request,
     copy_to_clipboard, execute_http_request, install_linux_icon_assets, journal_stamp,
     parse_transcription_response, play_completion_sound, probe_desktop_capabilities,
@@ -24,6 +27,63 @@ pub const TOGGLE_SHORTCUT_ID: &str = "toggle-recording";
 pub const TOGGLE_SHORTCUT_DESCRIPTION: &str = "Start or stop voice recording";
 pub const TOGGLE_SHORTCUT_TRIGGER: &str = "Alt+space";
 pub const HOST_APP_ID: &str = "com.voicetotext.VoiceToText";
+
+fn control_fifo_path() -> PathBuf {
+    let uid = unsafe { libc::getuid() };
+    PathBuf::from(format!("/run/user/{uid}/voicetotext-control"))
+}
+
+// Opens (or creates) the control FIFO and spawns a thread that reads toggle
+// commands from it. Returns a channel receiver that fires on each "toggle" line.
+// The FIFO is opened O_RDWR so it stays alive even when no external writer is
+// connected, preventing the reader from seeing spurious EOF.
+fn spawn_control_fifo_listener() -> mpsc::UnboundedReceiver<()> {
+    let fifo_path = control_fifo_path();
+    let (tx, rx) = mpsc::unbounded_channel();
+
+    std::thread::spawn(move || {
+        // Create the FIFO; ignore EEXIST.
+        if let Ok(c_path) = CString::new(fifo_path.as_os_str().as_encoded_bytes()) {
+            unsafe { libc::mkfifo(c_path.as_ptr(), 0o660) };
+        }
+
+        // If a stale regular file was left behind (e.g. by a failed `echo >
+        // path` when no FIFO existed), replace it.
+        if let Ok(meta) = std::fs::metadata(&fifo_path) {
+            if !meta.file_type().is_fifo() {
+                let _ = std::fs::remove_file(&fifo_path);
+                if let Ok(c_path) = CString::new(fifo_path.as_os_str().as_encoded_bytes()) {
+                    unsafe { libc::mkfifo(c_path.as_ptr(), 0o660) };
+                }
+            }
+        }
+
+        eprintln!("control FIFO ready: {}", fifo_path.display());
+
+        // O_RDWR keeps one write-end open so reads block (not EOF) when idle.
+        let file = match fs::OpenOptions::new().read(true).write(true).open(&fifo_path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("warning: could not open control FIFO: {e}");
+                return;
+            }
+        };
+
+        for line in std::io::BufReader::new(file).lines() {
+            match line {
+                Ok(msg) if msg.trim() == "toggle" => {
+                    if tx.send(()).is_err() {
+                        return;
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => return,
+            }
+        }
+    });
+
+    rx
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaemonEvent {
@@ -41,7 +101,6 @@ pub enum DaemonCommand {
 #[derive(Debug)]
 pub enum HotkeyDaemonError {
     MissingHomeDir,
-    MissingGlobalShortcutsPortal,
     InvalidAppId(String),
     DesktopEntry(std::io::Error),
     Portal(ashpd::Error),
@@ -55,9 +114,6 @@ impl std::fmt::Display for HotkeyDaemonError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingHomeDir => write!(f, "HOME is not set"),
-            Self::MissingGlobalShortcutsPortal => {
-                write!(f, "GlobalShortcuts portal is not available on this desktop")
-            }
             Self::InvalidAppId(app_id) => write!(f, "invalid portal app id: {app_id}"),
             Self::DesktopEntry(error) => write!(f, "{error}"),
             Self::Portal(error) => write!(f, "{error}"),
@@ -116,7 +172,9 @@ pub async fn run_hotkey_daemon_with_control(
     mut command_receiver: Option<mpsc::UnboundedReceiver<DaemonCommand>>,
 ) -> Result<(), HotkeyDaemonError> {
     let capabilities = probe_desktop_capabilities(environment);
-    ensure_daemon_capabilities(&capabilities)?;
+    if !capabilities.has_global_shortcuts_portal {
+        eprintln!("warning: GlobalShortcuts portal not available; hotkey via keyd/tray only");
+    }
     let home_dir = resolve_home_dir(environment).ok_or(HotkeyDaemonError::MissingHomeDir)?;
     install_linux_icon_assets(&home_dir).map_err(HotkeyDaemonError::DesktopEntry)?;
     ensure_host_desktop_entry(&home_dir).map_err(HotkeyDaemonError::DesktopEntry)?;
@@ -127,6 +185,7 @@ pub async fn run_hotkey_daemon_with_control(
     register_host_app(app_id).await?;
     let journal_dir = resolve_journal_dir(environment, &home_dir);
     let mut auto_paste_controller = AutoPasteController::new(environment);
+    let mut fifo_toggle = spawn_control_fifo_listener();
 
     eprintln!("creating global shortcuts session...");
     let global_shortcuts = GlobalShortcuts::new().await?;
@@ -138,15 +197,26 @@ pub async fn run_hotkey_daemon_with_control(
         .bind_shortcuts(&session, &[shortcut], None)
         .await?;
     eprintln!("awaiting bind response...");
-    let bind_response = bind_request.response()?;
-
-    eprintln!("global shortcut session created: {:?}", session);
-    for shortcut in bind_response.shortcuts() {
-        eprintln!(
-            "shortcut bound: id={} trigger={}",
-            shortcut.id(),
-            shortcut.trigger_description()
-        );
+    // On GNOME 50 the GCC shortcuts provider segfaults when it tries to show
+    // the binding dialog without a parent window, returning response code 2
+    // ("Other"). We treat this as non-fatal: keyd writes to the control FIFO
+    // instead and the tray button still works.
+    match bind_request.response() {
+        Ok(bind_response) => {
+            eprintln!("global shortcut session created: {:?}", session);
+            for shortcut in bind_response.shortcuts() {
+                eprintln!(
+                    "shortcut bound: id={} trigger={}",
+                    shortcut.id(),
+                    shortcut.trigger_description()
+                );
+            }
+        }
+        Err(error) => {
+            eprintln!(
+                "warning: portal shortcut binding failed ({error}); hotkey via keyd/tray only"
+            );
+        }
     }
     eprintln!("waiting for shortcut activations...");
     send_daemon_event(&event_sender, DaemonEvent::StateChanged(AppState::Idle));
@@ -200,6 +270,17 @@ pub async fn run_hotkey_daemon_with_control(
                     .await?;
                 }
             }
+            Some(()) = fifo_toggle.recv() => {
+                eprintln!("command: toggle recording (keyd)");
+                toggle_recording(
+                    &mut active_recording,
+                    &mut auto_paste_controller,
+                    &event_sender,
+                    api_key,
+                    &journal_dir,
+                )
+                .await?;
+            }
             maybe_command = async {
                 match &mut command_receiver {
                     Some(receiver) => receiver.recv().await,
@@ -231,14 +312,6 @@ pub async fn run_hotkey_daemon_with_control(
             }
         }
     }
-}
-
-fn ensure_daemon_capabilities(capabilities: &DesktopCapabilities) -> Result<(), HotkeyDaemonError> {
-    if !capabilities.has_global_shortcuts_portal {
-        return Err(HotkeyDaemonError::MissingGlobalShortcutsPortal);
-    }
-
-    Ok(())
 }
 
 pub(crate) fn ensure_host_desktop_entry(home_dir: &Path) -> std::io::Result<PathBuf> {
@@ -418,19 +491,6 @@ pub fn transcribe_audio_capture(
 mod tests {
     use super::*;
     use std::path::PathBuf;
-
-    #[test]
-    fn daemon_capability_check_requires_global_shortcuts_portal() {
-        let capabilities = DesktopCapabilities {
-            has_global_shortcuts_portal: false,
-        };
-
-        let error = ensure_daemon_capabilities(&capabilities).unwrap_err();
-        assert!(matches!(
-            error,
-            HotkeyDaemonError::MissingGlobalShortcutsPortal
-        ));
-    }
 
     #[test]
     fn desktop_entry_path_uses_host_app_id() {
