@@ -4,10 +4,10 @@ use std::fs;
 use std::io::BufRead;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ashpd::{
-    AppID,
+    AppID, WindowIdentifier,
     desktop::global_shortcuts::{GlobalShortcuts, NewShortcut},
     register_host_app,
 };
@@ -173,7 +173,7 @@ pub async fn run_hotkey_daemon_with_control(
 ) -> Result<(), HotkeyDaemonError> {
     let capabilities = probe_desktop_capabilities(environment);
     if !capabilities.has_global_shortcuts_portal {
-        eprintln!("warning: GlobalShortcuts portal not available; hotkey via keyd/tray only");
+        eprintln!("warning: GlobalShortcuts portal not available; hotkey via tray only");
     }
     let home_dir = resolve_home_dir(environment).ok_or(HotkeyDaemonError::MissingHomeDir)?;
     install_linux_icon_assets(&home_dir).map_err(HotkeyDaemonError::DesktopEntry)?;
@@ -187,109 +187,120 @@ pub async fn run_hotkey_daemon_with_control(
     let mut auto_paste_controller = AutoPasteController::new(environment);
     let mut fifo_toggle = spawn_control_fifo_listener();
 
-    eprintln!("creating global shortcuts session...");
     let global_shortcuts = GlobalShortcuts::new().await?;
-    let session = global_shortcuts.create_session().await?;
-    eprintln!("binding shortcut request...");
-    let shortcut = NewShortcut::new(TOGGLE_SHORTCUT_ID, TOGGLE_SHORTCUT_DESCRIPTION)
-        .preferred_trigger(Some(TOGGLE_SHORTCUT_TRIGGER));
-    let bind_request = global_shortcuts
-        .bind_shortcuts(&session, &[shortcut], None)
-        .await?;
-    eprintln!("awaiting bind response...");
-    // On GNOME 50 the GCC shortcuts provider segfaults when it tries to show
-    // the binding dialog without a parent window, returning response code 2
-    // ("Other"). We treat this as non-fatal: keyd writes to the control FIFO
-    // instead and the tray button still works.
-    match bind_request.response() {
-        Ok(bind_response) => {
-            eprintln!("global shortcut session created: {:?}", session);
-            for shortcut in bind_response.shortcuts() {
-                eprintln!(
-                    "shortcut bound: id={} trigger={}",
-                    shortcut.id(),
-                    shortcut.trigger_description()
-                );
-            }
-        }
-        Err(error) => {
-            eprintln!(
-                "warning: portal shortcut binding failed ({error}); hotkey via keyd/tray only"
-            );
-        }
-    }
-    eprintln!("waiting for shortcut activations...");
-    send_daemon_event(&event_sender, DaemonEvent::StateChanged(AppState::Idle));
-
     let mut activated = global_shortcuts.receive_activated().await?;
-    let mut closed = session.receive_closed().await?;
     let mut active_recording: Option<PwRecordRecorder> = None;
+    let mut session_backoff = Duration::from_secs(1);
 
-    loop {
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                eprintln!("received Ctrl+C, closing session");
-                stop_active_recording(active_recording.take());
-                let _ = session.close().await;
-                return Ok(());
+    'reconnect: loop {
+        eprintln!("creating global shortcuts session...");
+        let session = match global_shortcuts.create_session().await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!(
+                    "warning: failed to create shortcut session ({e}); retrying in {session_backoff:?}"
+                );
+                tokio::time::sleep(session_backoff).await;
+                session_backoff = (session_backoff * 2).min(Duration::from_secs(30));
+                continue 'reconnect;
             }
-            _ = async {
-                match &mut shutdown_receiver {
-                    Some(receiver) => {
-                        let _ = receiver.changed().await;
+        };
+        session_backoff = Duration::from_secs(1);
+
+        eprintln!("binding shortcut request...");
+        let shortcut = NewShortcut::new(TOGGLE_SHORTCUT_ID, TOGGLE_SHORTCUT_DESCRIPTION)
+            .preferred_trigger(Some(TOGGLE_SHORTCUT_TRIGGER));
+        // Pass a dummy X11 window id so the GCC provider takes the X11 dialog
+        // path instead of the Wayland one that crashes (GNOME 50 bug: the
+        // Wayland path asserts GDK_IS_SURFACE on a null surface).
+        let dummy_parent = WindowIdentifier::from_xid(1);
+        match global_shortcuts
+            .bind_shortcuts(&session, &[shortcut], Some(&dummy_parent))
+            .await
+        {
+            Err(e) => {
+                eprintln!(
+                    "warning: bind_shortcuts request failed ({e}); retrying in {session_backoff:?}"
+                );
+                tokio::time::sleep(session_backoff).await;
+                session_backoff = (session_backoff * 2).min(Duration::from_secs(30));
+                continue 'reconnect;
+            }
+            Ok(bind_request) => {
+                eprintln!("awaiting bind response...");
+                // On GNOME 50 the GCC shortcuts provider segfaults when it tries to show
+                // the binding dialog without a parent window, returning response code 2
+                // ("Other"). We treat this as non-fatal: the tray button still works.
+                match bind_request.response() {
+                    Ok(bind_response) => {
+                        eprintln!("global shortcut session active: {:?}", session);
+                        for s in bind_response.shortcuts() {
+                            eprintln!(
+                                "shortcut bound: id={} trigger={}",
+                                s.id(),
+                                s.trigger_description()
+                            );
+                        }
                     }
-                    None => std::future::pending::<()>().await,
+                    Err(error) => {
+                        eprintln!(
+                            "warning: portal shortcut binding failed ({error}); hotkey via tray only"
+                        );
+                    }
                 }
-            } => {
-                if shutdown_receiver.as_ref().is_some_and(|receiver| *receiver.borrow()) {
-                    eprintln!("received shutdown request, closing session");
+            }
+        }
+
+        let mut closed = match session.receive_closed().await {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!(
+                    "warning: failed to subscribe to session close events ({e}); reconnecting..."
+                );
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue 'reconnect;
+            }
+        };
+
+        eprintln!("waiting for shortcut activations...");
+        send_daemon_event(&event_sender, DaemonEvent::StateChanged(AppState::Idle));
+
+        loop {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    eprintln!("received Ctrl+C, closing session");
                     stop_active_recording(active_recording.take());
                     let _ = session.close().await;
                     return Ok(());
                 }
-            }
-            maybe_closed = closed.next() => {
-                if maybe_closed.is_some() {
-                    eprintln!("portal session closed");
-                    return Ok(());
-                }
-            }
-            maybe_activation = activated.next() => {
-                if let Some(event) = maybe_activation {
-                    if event.shortcut_id() != TOGGLE_SHORTCUT_ID {
-                        continue;
+                _ = async {
+                    match &mut shutdown_receiver {
+                        Some(receiver) => {
+                            let _ = receiver.changed().await;
+                        }
+                        None => std::future::pending::<()>().await,
                     }
-                    eprintln!("command: toggle recording (global shortcut)");
-                    toggle_recording(
-                        &mut active_recording,
-                        &mut auto_paste_controller,
-                        &event_sender,
-                        api_key,
-                        &journal_dir,
-                    )
-                    .await?;
+                } => {
+                    if shutdown_receiver.as_ref().is_some_and(|receiver| *receiver.borrow()) {
+                        eprintln!("received shutdown request, closing session");
+                        stop_active_recording(active_recording.take());
+                        let _ = session.close().await;
+                        return Ok(());
+                    }
                 }
-            }
-            Some(()) = fifo_toggle.recv() => {
-                eprintln!("command: toggle recording (keyd)");
-                toggle_recording(
-                    &mut active_recording,
-                    &mut auto_paste_controller,
-                    &event_sender,
-                    api_key,
-                    &journal_dir,
-                )
-                .await?;
-            }
-            maybe_command = async {
-                match &mut command_receiver {
-                    Some(receiver) => receiver.recv().await,
-                    None => std::future::pending::<Option<DaemonCommand>>().await,
+                maybe_closed = closed.next() => {
+                    if maybe_closed.is_some() {
+                        eprintln!("portal session closed; reconnecting...");
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        continue 'reconnect;
+                    }
                 }
-            } => {
-                match maybe_command {
-                    Some(DaemonCommand::ToggleRecording) => {
-                        eprintln!("command: toggle recording (tray)");
+                maybe_activation = activated.next() => {
+                    if let Some(event) = maybe_activation {
+                        if event.shortcut_id() != TOGGLE_SHORTCUT_ID {
+                            continue;
+                        }
+                        eprintln!("command: toggle recording (global shortcut)");
                         toggle_recording(
                             &mut active_recording,
                             &mut auto_paste_controller,
@@ -299,14 +310,45 @@ pub async fn run_hotkey_daemon_with_control(
                         )
                         .await?;
                     }
-                    Some(DaemonCommand::Shutdown) => {
-                        eprintln!("received shutdown command, closing session");
-                        stop_active_recording(active_recording.take());
-                        let _ = session.close().await;
-                        return Ok(());
+                }
+                Some(()) = fifo_toggle.recv() => {
+                    eprintln!("command: toggle recording (control FIFO)");
+                    toggle_recording(
+                        &mut active_recording,
+                        &mut auto_paste_controller,
+                        &event_sender,
+                        api_key,
+                        &journal_dir,
+                    )
+                    .await?;
+                }
+                maybe_command = async {
+                    match &mut command_receiver {
+                        Some(receiver) => receiver.recv().await,
+                        None => std::future::pending::<Option<DaemonCommand>>().await,
                     }
-                    None => {
-                        command_receiver = None;
+                } => {
+                    match maybe_command {
+                        Some(DaemonCommand::ToggleRecording) => {
+                            eprintln!("command: toggle recording (tray)");
+                            toggle_recording(
+                                &mut active_recording,
+                                &mut auto_paste_controller,
+                                &event_sender,
+                                api_key,
+                                &journal_dir,
+                            )
+                            .await?;
+                        }
+                        Some(DaemonCommand::Shutdown) => {
+                            eprintln!("received shutdown command, closing session");
+                            stop_active_recording(active_recording.take());
+                            let _ = session.close().await;
+                            return Ok(());
+                        }
+                        None => {
+                            command_receiver = None;
+                        }
                     }
                 }
             }
