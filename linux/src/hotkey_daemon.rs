@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ashpd::{
-    AppID, WindowIdentifier,
+    AppID,
     desktop::global_shortcuts::{GlobalShortcuts, NewShortcut},
     register_host_app,
 };
@@ -210,12 +210,8 @@ pub async fn run_hotkey_daemon_with_control(
         eprintln!("binding shortcut request...");
         let shortcut = NewShortcut::new(TOGGLE_SHORTCUT_ID, TOGGLE_SHORTCUT_DESCRIPTION)
             .preferred_trigger(Some(TOGGLE_SHORTCUT_TRIGGER));
-        // Pass a dummy X11 window id so the GCC provider takes the X11 dialog
-        // path instead of the Wayland one that crashes (GNOME 50 bug: the
-        // Wayland path asserts GDK_IS_SURFACE on a null surface).
-        let dummy_parent = WindowIdentifier::from_xid(1);
         match global_shortcuts
-            .bind_shortcuts(&session, &[shortcut], Some(&dummy_parent))
+            .bind_shortcuts(&session, &[shortcut], None)
             .await
         {
             Err(e) => {
@@ -228,15 +224,17 @@ pub async fn run_hotkey_daemon_with_control(
             }
             Ok(bind_request) => {
                 eprintln!("awaiting bind response...");
-                // On GNOME 50 the GCC shortcuts provider segfaults when it tries to show
-                // the binding dialog without a parent window, returning response code 2
-                // ("Other"). We treat this as non-fatal: the tray button still works.
+                // On GNOME 50 the GlobalShortcuts portal backend (gnome-control-center)
+                // always segfaults when trying to show the key-binding dialog for a
+                // windowless app, returning response code 2 ("Other"). We treat this as
+                // non-fatal: hotkey works via the GNOME custom shortcut → control FIFO
+                // path configured by setup-gnome-shortcuts.sh.
                 match bind_request.response() {
                     Ok(bind_response) => {
-                        eprintln!("global shortcut session active: {:?}", session);
+                        eprintln!("portal shortcut bound successfully");
                         for s in bind_response.shortcuts() {
                             eprintln!(
-                                "shortcut bound: id={} trigger={}",
+                                "  shortcut: id={} trigger={}",
                                 s.id(),
                                 s.trigger_description()
                             );
@@ -244,7 +242,10 @@ pub async fn run_hotkey_daemon_with_control(
                     }
                     Err(error) => {
                         eprintln!(
-                            "warning: portal shortcut binding failed ({error}); hotkey via tray only"
+                            "warning: portal shortcut binding failed ({error})"
+                        );
+                        eprintln!(
+                            "  hotkey active via GNOME custom shortcut → control FIFO"
                         );
                     }
                 }
