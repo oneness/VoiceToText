@@ -56,6 +56,9 @@ voicetotext-linux-core daemon
 This starts:
 - A system tray icon (via StatusNotifierItem/KDE sysext)
 - A GlobalShortcuts portal session bound to **Alt+Space**
+- A GNOME custom keyboard shortcut for **Alt+Space** (registered automatically
+  via `gsettings` on every startup — this is the reliable hotkey path on
+  GNOME 50; see [Alt+Space hotkey doesn't work](#altspace-hotkey-doesnt-work-gnome-50) below)
 
 ### 5. Autostart
 
@@ -94,46 +97,49 @@ voicetotext-linux-core <audio-file>        # transcribe an existing file
 
 ## Troubleshooting
 
-### Alt+Space hotkey doesn't work (GNOME 49–50)
+### Alt+Space hotkey doesn't work (GNOME 50)
 
-**Symptom:** The daemon starts, logs `shortcut bound: id=toggle-recording trigger=Press <Alt>space`,
-but pressing Alt+Space does nothing. GNOME Shell doesn't grab the key.
+**Symptom:** The daemon logs `warning: portal shortcut binding failed (Portal
+request didn't succeed: Other)`.
 
-**Root cause:** GNOME's global-shortcuts provider (introduced in
-xdg-desktop-portal-gnome 50.0) requires the shortcut binding to be persisted
-in dconf. The portal `BindShortcuts` call succeeds at the D-Bus level, but if
-the binding is not stored in dconf, GNOME Shell never actually registers the
-key grab.
-
-You can check the current state:
+**Root cause:** On GNOME 50, `gnome-control-center-global-shortcuts-provider`
+segfaults every time `bind_shortcuts` is called from a windowless app (it
+tries to show a key-binding dialog with no parent window). The portal
+responds with error code 2 ("Other") after the crash. This is a GNOME 50 bug,
+not something fixable from the app side. You can confirm it in the journal:
 
 ```bash
-# Should show 'shortcuts': <['<Alt>space']> inside the entry
-dconf dump /org/gnome/settings-daemon/global-shortcuts/
+journalctl --user | grep -i "global-shortcuts-provider\|core-dump"
+# ...cc_global_shortcut_dialog_present ... assertion 'GDK_IS_SURFACE (surface)' failed
+# ...Main process exited, code=dumped, status=11/SEGV
 ```
 
-**If the `shortcuts` key is missing**, set it manually:
+**This is expected and handled automatically** — the daemon logs the warning
+and keeps running. On every startup it registers Alt+Space as a **GNOME
+custom keyboard shortcut** (via `gsettings`, see `ensure_gnome_custom_shortcut()`
+in `hotkey_daemon.rs`) that writes `toggle` to the daemon's control FIFO at
+`/run/user/$UID/voicetotext-control`. No separate setup script, dconf edit, or
+Python dependency is needed — this happens purely in the Rust binary.
+
+If Alt+Space still doesn't work, verify the shortcut was registered:
 
 ```bash
-dconf write "/org/gnome/settings-daemon/global-shortcuts/com.voicetotext.VoiceToText/shortcuts" \
-  "[('toggle-recording', {'description': <'Start or stop voice recording'>, 'shortcuts': <['<Alt>space']>})]"
+gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings
+# should list .../custom-keybindings/voicetotext/
+
+gsettings get org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/voicetotext/ binding
+# should be '<Alt>space'
 ```
 
-Also ensure the application is listed:
+and that the FIFO exists and the daemon is running:
 
 ```bash
-dconf write "/org/gnome/settings-daemon/global-shortcuts/applications" \
-  "['com.voicetotext.VoiceToText']"
+ls -la /run/user/$(id -u)/voicetotext-control   # should be a named pipe (prw-...)
+pgrep -a voicetotext-linux-core
 ```
 
-After setting these values, restart the daemon.
-
-**Why this doesn't happen on all machines:** On systems with
-xdg-desktop-portal-gnome 49.x (e.g., NixOS with GNOME 49.4), the
-GlobalShortcuts portal works without requiring the dconf binding to be
-pre-populated — the portal provider handles the grab directly. On 50.0+
-(Debian unstable), the provider delegates to the settings daemon, which reads
-the binding from dconf. If the binding is empty, no grab is registered.
+If GNOME ever fixes the segfault, the portal path will bind directly and this
+fallback becomes unnecessary — no code change required.
 
 ### GlobalShortcuts portal not available
 
@@ -206,9 +212,12 @@ readlink /proc/$(pgrep -f xdg-desktop-portal-gnome)/exe
 
 The daemon (`voicetotext-linux-core daemon`) runs two components:
 
-1. **GlobalShortcuts listener** (`hotkey_daemon.rs`): Uses the
-   `org.freedesktop.portal.GlobalShortcuts` portal via `ashpd` to register
-   Alt+Space as a global hotkey. When activated, it toggles recording.
+1. **Hotkey listener** (`hotkey_daemon.rs`): Attempts to register Alt+Space via
+   the `org.freedesktop.portal.GlobalShortcuts` portal (`ashpd`). On GNOME 50
+   this reliably fails (see Troubleshooting), so on every startup the daemon
+   also registers Alt+Space as a GNOME custom keyboard shortcut via
+   `gsettings`, which writes to a control FIFO the daemon listens on. Either
+   path toggles recording when triggered.
 
 2. **System tray icon** (`tray_app.rs`): Uses `ksni` (StatusNotifierItem) to
    provide a tray icon with status indication and manual toggle/quit controls.

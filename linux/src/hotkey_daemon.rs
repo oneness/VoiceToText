@@ -4,6 +4,7 @@ use std::fs;
 use std::io::BufRead;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ashpd::{
@@ -28,9 +29,94 @@ pub const TOGGLE_SHORTCUT_DESCRIPTION: &str = "Start or stop voice recording";
 pub const TOGGLE_SHORTCUT_TRIGGER: &str = "Alt+space";
 pub const HOST_APP_ID: &str = "com.voicetotext.VoiceToText";
 
+const GNOME_MEDIA_KEYS_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
+const GNOME_SHORTCUT_BINDING_PATH: &str =
+    "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/voicetotext/";
+const GNOME_SHORTCUT_KEYBINDING: &str = "<Alt>space";
+const GNOME_SHORTCUT_NAME: &str = "VoiceToText Toggle";
+
 fn control_fifo_path() -> PathBuf {
     let uid = unsafe { libc::getuid() };
     PathBuf::from(format!("/run/user/{uid}/voicetotext-control"))
+}
+
+// Registers Alt+Space as a GNOME custom keyboard shortcut that writes "toggle"
+// to the control FIFO. This is a no-op (with a warning) on non-GNOME desktops
+// or where `gsettings` is unavailable. Runs on every daemon start so no
+// separate setup step (script, Python, etc.) is required.
+fn ensure_gnome_custom_shortcut(fifo_path: &Path) {
+    let list_output = match Command::new("gsettings")
+        .args(["get", GNOME_MEDIA_KEYS_SCHEMA, "custom-keybindings"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        Ok(_) | Err(_) => {
+            eprintln!(
+                "note: gsettings unavailable or GNOME media-keys schema missing; skipping GNOME custom shortcut setup"
+            );
+            return;
+        }
+    };
+
+    let mut paths = parse_gvariant_strv(&String::from_utf8_lossy(&list_output.stdout));
+    if !paths.iter().any(|p| p == GNOME_SHORTCUT_BINDING_PATH) {
+        paths.push(GNOME_SHORTCUT_BINDING_PATH.to_string());
+        let value = format_gvariant_strv(&paths);
+        if !run_gsettings_set(&["set", GNOME_MEDIA_KEYS_SCHEMA, "custom-keybindings", &value]) {
+            eprintln!("warning: failed to register GNOME custom shortcut path");
+            return;
+        }
+    }
+
+    let keybinding_schema =
+        format!("{GNOME_MEDIA_KEYS_SCHEMA}.custom-keybinding:{GNOME_SHORTCUT_BINDING_PATH}");
+    let command = format!("bash -c 'echo toggle > {}'", fifo_path.display());
+
+    let configured = run_gsettings_set(&["set", &keybinding_schema, "name", GNOME_SHORTCUT_NAME])
+        && run_gsettings_set(&[
+            "set",
+            &keybinding_schema,
+            "binding",
+            GNOME_SHORTCUT_KEYBINDING,
+        ])
+        && run_gsettings_set(&["set", &keybinding_schema, "command", &command]);
+
+    if configured {
+        eprintln!(
+            "GNOME custom shortcut configured: {GNOME_SHORTCUT_KEYBINDING} → control FIFO"
+        );
+    } else {
+        eprintln!("warning: failed to fully configure GNOME custom shortcut");
+    }
+}
+
+fn run_gsettings_set(args: &[&str]) -> bool {
+    Command::new("gsettings")
+        .args(args)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+// Parses a gsettings GVariant string-array literal, e.g. "@as []" (empty) or
+// "['/a/', '/b/']". Good enough for the values gsettings itself produces;
+// paths never contain commas or quotes.
+fn parse_gvariant_strv(raw: &str) -> Vec<String> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.starts_with("@as") {
+        return Vec::new();
+    }
+    raw.trim_start_matches('[')
+        .trim_end_matches(']')
+        .split(',')
+        .map(|s| s.trim().trim_matches('\'').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn format_gvariant_strv(items: &[String]) -> String {
+    let quoted: Vec<String> = items.iter().map(|s| format!("'{s}'")).collect();
+    format!("[{}]", quoted.join(", "))
 }
 
 // Opens (or creates) the control FIFO and spawns a thread that reads toggle
@@ -185,6 +271,7 @@ pub async fn run_hotkey_daemon_with_control(
     register_host_app(app_id).await?;
     let journal_dir = resolve_journal_dir(environment, &home_dir);
     let mut auto_paste_controller = AutoPasteController::new(environment);
+    ensure_gnome_custom_shortcut(&control_fifo_path());
     let mut fifo_toggle = spawn_control_fifo_listener();
 
     let global_shortcuts = GlobalShortcuts::new().await?;
@@ -228,7 +315,7 @@ pub async fn run_hotkey_daemon_with_control(
                 // always segfaults when trying to show the key-binding dialog for a
                 // windowless app, returning response code 2 ("Other"). We treat this as
                 // non-fatal: hotkey works via the GNOME custom shortcut → control FIFO
-                // path configured by setup-gnome-shortcuts.sh.
+                // path configured by ensure_gnome_custom_shortcut() above.
                 match bind_request.response() {
                     Ok(bind_response) => {
                         eprintln!("portal shortcut bound successfully");

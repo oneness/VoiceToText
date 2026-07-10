@@ -102,7 +102,7 @@ The crate at `linux/` is both a binary and a library (`lib.rs` re-exports everyt
 | `groq.rs` | Pure request builder and response parser — no I/O; validates 25 MB upload cap |
 | `transport.rs` | `reqwest::blocking` HTTP execution; maps non-2xx to `TransportError` |
 | `recorder.rs` | `pw-record` piped into `ffmpeg` → Opus/OGG at 16 kbps; SIGINT to stop; `list_audio_sources()` via `wpctl` |
-| `hotkey_daemon.rs` | Core async event loop: XDG GlobalShortcuts portal → `toggle_recording()` → full pipeline |
+| `hotkey_daemon.rs` | Core async event loop: XDG GlobalShortcuts portal (+ auto-configured GNOME custom shortcut fallback) → `toggle_recording()` → full pipeline |
 | `autopaste.rs` | XDG RemoteDesktop portal → Ctrl+Y keysym injection (GNOME Wayland); restore token persisted to `~/.local/state/voicetotext/` |
 | `tray_app.rs` | `ksni` StatusNotifierItem tray; bridges events between tray and daemon via channels |
 | `platform.rs` | Clipboard (`wl-copy` / `xclip` / `xsel`), sound (`pw-play`), journal write, icon install |
@@ -111,7 +111,9 @@ The crate at `linux/` is both a binary and a library (`lib.rs` re-exports everyt
 
 ### Hotkey
 
-`ashpd` GlobalShortcuts portal (`org.freedesktop.portal.GlobalShortcuts`) — the modern sandboxed approach for GNOME Wayland. Binds `"toggle-recording"` with preferred trigger `Alt+Space`. Requires `xdg-desktop-portal-gnome`. A known quirk on some GNOME versions requires pre-seeding the dconf binding.
+`ashpd` GlobalShortcuts portal (`org.freedesktop.portal.GlobalShortcuts`) — the modern sandboxed approach for GNOME Wayland. Binds `"toggle-recording"` with preferred trigger `Alt+Space`. Requires `xdg-desktop-portal-gnome`.
+
+On GNOME 50, `gnome-control-center-global-shortcuts-provider` segfaults when `bind_shortcuts` tries to show its key-binding dialog without a parent window, so the portal bind reliably fails there. The daemon treats this as non-fatal and falls back to a GNOME custom keyboard shortcut (`<Alt>space` → writes `toggle` to a control FIFO at `/run/user/$UID/voicetotext-control`), which it registers itself via `gsettings` on every startup (`ensure_gnome_custom_shortcut()` in `hotkey_daemon.rs`) — no separate setup script or manual dconf edit required. If GNOME ever fixes the crash, the portal path is used automatically without any code change.
 
 ### Audio recording
 
