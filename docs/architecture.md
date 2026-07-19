@@ -7,7 +7,7 @@ VoiceToText is a global-hotkey dictation utility that runs as an invisible syste
 - **macOS** — Swift + AppKit, built with Xcode
 - **Linux** — Rust, targets PipeWire + GNOME Wayland
 
-Both implementations follow the same pipeline: hotkey press → audio capture → Groq Whisper transcription → clipboard → auto-paste → journal append.
+Both implementations follow the same pipeline: hotkey press → audio capture → transcription → clipboard → auto-paste → journal append. macOS transcribes via the Groq cloud API; Linux transcribes locally on-device by default (transcribe.cpp + Parakeet), with Groq as a config-selectable alternative.
 
 ---
 
@@ -17,10 +17,13 @@ Both implementations follow the same pipeline: hotkey press → audio capture �
 hotkey press
     │
     ▼
-audio capture (AVAudioRecorder / pw-record + ffmpeg)
+audio capture (AVAudioRecorder / pw-record)
     │
     ▼
-Groq Whisper API  (whisper-large-v3-turbo)
+transcription
+  · Linux local:  transcribe.cpp (ggml) + Nemotron 3.5 ASR Streaming 0.6B GGUF,
+                  offline, streamed live while recording
+  · cloud:        Groq Whisper API (whisper-large-v3-turbo) — macOS, or Linux with backend=groq
     │
     ▼
 clipboard + auto-paste  (CGEvent Cmd+V / XDG RemoteDesktop Ctrl+Y)
@@ -98,10 +101,11 @@ The crate at `linux/` is both a binary and a library (`lib.rs` re-exports everyt
 | Module | Role |
 |--------|------|
 | `state.rs` | `enum AppState { Idle, Recording, Transcribing }` |
-| `config.rs` | API key resolution (env var → XDG config file); `resolve_config_path()` respects `XDG_CONFIG_HOME` and `VOICETOTEXT_CONFIG_PATH` |
+| `config.rs` | Backend selection (`backend`: local/groq), model path, and API key resolution (env var → XDG config file); `resolve_config_path()` respects `XDG_CONFIG_HOME` and `VOICETOTEXT_CONFIG_PATH` |
+| `engine.rs` | `TranscriptionEngine` enum — local on-device inference via `transcribe-cpp` (ggml) with a Parakeet GGUF, or the Groq cloud path |
 | `groq.rs` | Pure request builder and response parser — no I/O; validates 25 MB upload cap |
 | `transport.rs` | `reqwest::blocking` HTTP execution; maps non-2xx to `TransportError` |
-| `recorder.rs` | `pw-record` piped into `ffmpeg` → Opus/OGG at 16 kbps; SIGINT to stop; `list_audio_sources()` via `wpctl` |
+| `recorder.rs` | `pw-record` capture: live raw-PCM chunks over a channel (local daemon streaming) or piped into `ffmpeg` → Opus/OGG at 16 kbps (Groq + CLI); SIGINT to stop; `list_audio_sources()` via `wpctl` |
 | `hotkey_daemon.rs` | Core async event loop: XDG GlobalShortcuts portal (+ auto-configured GNOME custom shortcut fallback) → `toggle_recording()` → full pipeline |
 | `autopaste.rs` | XDG RemoteDesktop portal → Ctrl+Y keysym injection (GNOME Wayland); restore token persisted to `~/.local/state/voicetotext/` |
 | `tray_app.rs` | `ksni` StatusNotifierItem tray; bridges events between tray and daemon via channels |
@@ -117,11 +121,19 @@ On GNOME 50, `gnome-control-center-global-shortcuts-provider` segfaults when `bi
 
 ### Audio recording
 
-`PwRecordRecorder` launches two child processes: `pw-record` (raw 16 kHz mono PCM to stdout) piped into `ffmpeg` (encodes to Opus/OGG at 16 kbps, `voip` application profile). Outputs to `/tmp/voicetotext-recording-<nanoseconds>.ogg`. Stop sends SIGINT to `pw-record` via `libc::kill`, then waits for both processes to exit.
+`pw-record` captures raw 16 kHz mono s16le PCM to stdout, consumed one of two ways:
+
+- **`StreamingPwRecorder`** (local daemon) — a reader thread forwards sample-aligned chunks over a channel to the live transcription worker; no encode step, no temp file.
+- **`PwRecordRecorder`** (Groq + CLI record mode) — piped into `ffmpeg` (Opus/OGG at 16 kbps, `voip` profile), written to `/tmp/voicetotext-recording-<nanoseconds>.ogg`.
+
+Stop sends SIGINT to `pw-record` via `libc::kill`, then drains the sink.
 
 ### Transcription
 
-Same Groq API and model as macOS. `build_groq_transcription_request()` in `groq.rs` is pure (no I/O) and fully unit-tested. `execute_http_request()` in `transport.rs` uses `reqwest::blocking` inside `tokio::task::spawn_blocking`.
+Selected at startup by `config.rs::resolve_backend()` into a `TranscriptionEngine` (`engine.rs`):
+
+- **local (offline)** — `transcribe-cpp` (ggml) loads a Nemotron 3.5 ASR Streaming 0.6B GGUF once at startup (~0.3 s). Daemon recordings are transcribed **live**: `StreamingPwRecorder` forwards raw PCM chunks (256 ms) over a channel to a worker thread that feeds the model's streaming session, so the final transcript is ready ~instantly at stop (measured ~0.6 s stop-to-paste including journal/clipboard). Models without streaming support fall back to a batch run over the accumulated audio automatically. CLI file/record modes use batch: audio (file or recorder OGG) is decoded to PCM via `ffmpeg`. Model auto-resolves to `~/.local/share/voicetotext/models/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf` and is **auto-downloaded on first run** (streamed to a `.partial` file, resumable via HTTP Range, size-verified, renamed into place; custom `model_path` values are never auto-downloaded). Overrides: `model_path`/`language` config keys, `VOICETOTEXT_MODEL_PATH`, `VOICETOTEXT_LANGUAGE`.
+- **groq (cloud)** — same API and model as macOS. `build_groq_transcription_request()` in `groq.rs` is pure (no I/O) and fully unit-tested. `execute_http_request()` in `transport.rs` uses `reqwest::blocking` inside `tokio::task::spawn_blocking`.
 
 ### Auto-paste
 
@@ -136,6 +148,7 @@ Same Groq API and model as macOS. `build_groq_transcription_request()` in `groq.
 |-------|---------|
 | `ashpd 0.12` | XDG portal bindings (GlobalShortcuts + RemoteDesktop) |
 | `ksni 0.3` | StatusNotifierItem system tray |
+| `transcribe-cpp 0.1` | Local speech-to-text inference (ggml; compiles the native library via CMake) |
 | `reqwest 0.12` (blocking + rustls-tls) | HTTP client for Groq API |
 | `tokio 1` | Async runtime for daemon event loop |
 | `serde_json 1.0` | Config and API response parsing |
@@ -146,11 +159,13 @@ Same Groq API and model as macOS. `build_groq_transcription_request()` in `groq.
 
 ## Configuration
 
-Both platforms use the same JSON schema:
+Both platforms share the same JSON config file. On Linux, **local is the default backend** — no config file is needed at all for on-device transcription. Groq is used only when explicitly selected:
 
 ```json
-{"groq_api_key": "your-key-here"}
+{"backend": "groq", "groq_api_key": "your-key-here"}
 ```
+
+(macOS only supports Groq.) `VOICETOTEXT_BACKEND` overrides the config key.
 
 API key resolution priority (identical on both platforms):
 

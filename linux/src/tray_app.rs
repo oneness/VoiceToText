@@ -2,16 +2,16 @@ use ksni::{MenuItem, Status, ToolTip, Tray, TrayMethods, menu::StandardItem};
 use tokio::sync::mpsc;
 
 use crate::{
-    AppState, DaemonCommand, DaemonEvent, HOST_APP_ID, HotkeyDaemonError,
+    AppState, DaemonCommand, DaemonEvent, HOST_APP_ID, HotkeyDaemonError, TranscriptionEngine,
     install_linux_icon_assets, resolve_home_dir, run_hotkey_daemon_with_control,
 };
 
 pub async fn run_tray_daemon(
     environment: &[(String, String)],
-    api_key: &str,
+    engine: &TranscriptionEngine,
 ) -> Result<(), HotkeyDaemonError> {
     let owned_environment = environment.to_vec();
-    let owned_api_key = api_key.to_string();
+    let owned_engine = engine.clone();
     let home_dir = resolve_home_dir(environment).ok_or(HotkeyDaemonError::MissingHomeDir)?;
     let icon_theme_path =
         install_linux_icon_assets(&home_dir).map_err(HotkeyDaemonError::DesktopEntry)?;
@@ -36,7 +36,7 @@ pub async fn run_tray_daemon(
     let daemon_task = tokio::spawn(async move {
         run_hotkey_daemon_with_control(
             &owned_environment,
-            &owned_api_key,
+            &owned_engine,
             Some(event_sender),
             None,
             Some(command_receiver),

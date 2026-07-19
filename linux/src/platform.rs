@@ -482,7 +482,8 @@ mod tests {
         }
         #[cfg(not(debug_assertions))]
         {
-            let exe_dir = std::env::current_exe().unwrap().parent().unwrap();
+            let exe_path = std::env::current_exe().unwrap();
+            let exe_dir = exe_path.parent().unwrap();
             assert!(path.starts_with(exe_dir));
         }
     }

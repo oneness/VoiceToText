@@ -7,6 +7,8 @@ crossPkgs.rustPlatform.buildRustPackage {
   version = "0.1.0";
   src = ./.;
   cargoLock.lockFile = ./Cargo.lock;
+  # transcribe-cpp-sys compiles the native transcribe.cpp library via CMake.
+  nativeBuildInputs = [ pkgs.buildPackages.cmake ];
   postPatch = ''
     # Replace relative paths to VoiceToText assets with local assets dir
     substituteInPlace src/platform.rs \

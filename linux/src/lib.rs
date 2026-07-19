@@ -1,6 +1,7 @@
 mod autopaste;
 mod config;
 mod desktop;
+mod engine;
 mod groq;
 mod hotkey_daemon;
 mod journal;
@@ -10,8 +11,12 @@ mod state;
 mod transport;
 mod tray_app;
 
-pub use config::{Config, parse_api_key_from_config, resolve_api_key, resolve_config_path};
+pub use config::{Config, TranscriptionBackendChoice, resolve_config_path};
 pub use desktop::{DesktopCapabilities, probe_desktop_capabilities};
+pub use engine::{
+    DEFAULT_LOCAL_MODEL_FILE, DEFAULT_LOCAL_MODEL_URL, LocalTranscribeError, LocalTranscriber,
+    TranscriptionEngine,
+};
 pub use groq::{
     AudioCapture, DEFAULT_GROQ_MODEL, GROQ_MAX_UPLOAD_BYTES, GROQ_TRANSCRIPTIONS_URL,
     GroqRequestError, GroqRequestOptions, HttpRequest, build_groq_transcription_request,

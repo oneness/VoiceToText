@@ -321,16 +321,19 @@
   </div>
 </section>
 
-<!-- ═══ 5. Groq Whisper ═══ -->
+<!-- ═══ 5. Transcription ═══ -->
 <section class="slide">
   <div class="box">
     <div class="label">transcription</div>
-    <h2>Groq Whisper</h2>
-    <p class="big">Both platforms use <strong>whisper-large-v3-turbo</strong> via Groq's API.<br><br>~8× faster inference than the full Whisper model with minimal accuracy loss. Audio is captured at 16 kHz mono — Whisper's native rate — to keep uploads small and latency low.</p>
+    <h2>Local or cloud</h2>
+    <p class="big">On Linux, transcription runs <strong>fully on-device</strong> via <a href="https://github.com/handy-computer/transcribe.cpp">transcribe.cpp</a> (ggml) — and it's <strong>streaming</strong>: text is transcribed live while you speak, so the transcript is ready the instant you stop, no matter how long you talked.<br><br>The cloud backend — <strong>whisper-large-v3-turbo</strong> via Groq's API — remains a config switch away, and is what macOS uses.</p>
     <div class="mono" style="margin-top: 24px; font-size: 15px;">
+      <span class="cm"># local (Linux default recommendation)</span><br>
+      model: nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf<br>
+      mic → 16 kHz PCM chunks → streaming decode → ~0.6 s stop-to-paste<br><br>
+      <span class="cm"># cloud</span><br>
       POST api.groq.com/openai/v1/audio/transcriptions<br>
-      model: whisper-large-v3-turbo<br>
-      format: multipart/form-data (.m4a / .ogg)
+      model: whisper-large-v3-turbo
     </div>
   </div>
 </section>
@@ -360,7 +363,8 @@
     <table>
       <tr><th>Module</th><th>Role</th></tr>
       <tr><td><code>hotkey_daemon</code></td><td>Async event loop, XDG GlobalShortcuts portal</td></tr>
-      <tr><td><code>recorder</code></td><td>pw-record | ffmpeg → Opus/OGG at 16 kbps</td></tr>
+      <tr><td><code>recorder</code></td><td>pw-record → live PCM chunks (local) or ffmpeg Opus/OGG (cloud)</td></tr>
+      <tr><td><code>engine</code></td><td>Streaming transcribe.cpp inference (Nemotron GGUF) or Groq</td></tr>
       <tr><td><code>groq</code></td><td>Pure request builder + response parser</td></tr>
       <tr><td><code>transport</code></td><td>reqwest blocking HTTP execution</td></tr>
       <tr><td><code>autopaste</code></td><td>XDG RemoteDesktop portal → Ctrl+Y keysyms</td></tr>
@@ -445,15 +449,14 @@
 <section class="slide">
   <div class="box">
     <div class="label">configuration</div>
-    <h2>Just an API key</h2>
-    <p class="big">One Groq API key is the only required configuration. Three ways to provide it:</p>
+    <h2>Zero config on Linux</h2>
+    <p class="big">Local transcription is the default — no account, no key, no network, no config file. The model downloads itself on first run.</p>
     <div class="mono" style="margin-top: 20px; font-size: 15px;">
-      <span class="cm"># Environment variable (any platform)</span><br>
-      export GROQ_API_KEY="your-key"<br><br>
-      <span class="cm"># macOS: interactive setup</span><br>
-      make setup<br><br>
-      <span class="cm"># Linux: config file</span><br>
-      ~/.config/voicetotext/config.json
+      <span class="cm"># Linux: nothing to configure (local is default)</span><br><br>
+      <span class="cm"># Linux: opt into Groq cloud instead</span><br>
+      {"backend":"groq","groq_api_key":"your-key"}<br><br>
+      <span class="cm"># macOS: interactive Groq setup</span><br>
+      make setup
     </div>
   </div>
 </section>
@@ -500,13 +503,12 @@
     <div class="mono" style="text-align: left; font-size: 15px;">
       <span class="cm"># 1. Install runtime deps</span><br>
       <span class="cm">#    pipewire ffmpeg wl-clipboard</span><br><br>
-      <span class="cm"># 2. Set your Groq API key</span><br>
-      export GROQ_API_KEY="your-key"<br><br>
-      <span class="cm"># 3. Build</span><br>
+      <span class="cm"># 2. Build (needs cmake + a C++ toolchain)</span><br>
       cd linux && cargo build --release<br><br>
-      <span class="cm"># 4. Run the daemon</span><br>
-      ./target/release/voicetotext daemon<br><br>
-      <span class="cm"># Press Alt+Space to record</span>
+      <span class="cm"># 3. Run the daemon — local transcription is the</span><br>
+      <span class="cm">#    default; the model auto-downloads on first run</span><br>
+      ./target/release/voicetotext-linux-core daemon<br><br>
+      <span class="cm"># Press Alt+Space to record — offline</span>
     </div>
   </div>
 </section>

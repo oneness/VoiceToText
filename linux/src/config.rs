@@ -1,13 +1,77 @@
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TranscriptionBackendChoice {
+    Groq,
+    Local,
+}
+
+/// All settings the app reads, resolved once at startup. Each field comes
+/// from its environment variable when set (trimmed, non-empty), else the
+/// config-file key, else the default.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
-    pub groq_api_key: String,
+    /// VOICETOTEXT_BACKEND / "backend": "local" or "groq". Local is the
+    /// default — Groq runs only when explicitly selected.
+    pub backend: TranscriptionBackendChoice,
+    /// VOICETOTEXT_MODEL_PATH / "model_path", defaulting to the bundled model
+    /// under ~/.local/share. `~` is expanded.
+    pub model_path: PathBuf,
+    /// VOICETOTEXT_LANGUAGE / "language" (e.g. "en-US"); None = autodetect.
+    pub language: Option<String>,
+    /// GROQ_API_KEY / "groq_api_key" (or legacy "GROQ_API_KEY" file key).
+    pub groq_api_key: Option<String>,
 }
 
 impl Config {
-    pub fn is_configured(&self) -> bool {
-        !self.groq_api_key.trim().is_empty()
+    pub fn resolve(
+        environment: &[(impl AsRef<str>, impl AsRef<str>)],
+        config_json: Option<&str>,
+        home_dir: &Path,
+    ) -> Self {
+        let parsed: Option<serde_json::Value> =
+            config_json.and_then(|json| serde_json::from_str(json).ok());
+        let file_field = |key: &str| -> Option<String> {
+            parsed
+                .as_ref()
+                .and_then(|value| value.get(key))
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        };
+        let setting =
+            |env_key: &str, file_key: &str| non_empty_env(environment, env_key).or_else(|| file_field(file_key));
+
+        let backend = match setting("VOICETOTEXT_BACKEND", "backend").as_deref() {
+            None => TranscriptionBackendChoice::Local,
+            Some(value) if value.eq_ignore_ascii_case("groq") => TranscriptionBackendChoice::Groq,
+            Some(value) if value.eq_ignore_ascii_case("local") => TranscriptionBackendChoice::Local,
+            Some(other) => {
+                eprintln!("warning: unrecognized backend {other:?}; using local");
+                TranscriptionBackendChoice::Local
+            }
+        };
+
+        let model_path = setting("VOICETOTEXT_MODEL_PATH", "model_path")
+            .map(|path| expand_home(&path, home_dir))
+            .unwrap_or_else(|| {
+                home_dir
+                    .join(".local/share/voicetotext/models")
+                    .join(crate::DEFAULT_LOCAL_MODEL_FILE)
+            });
+
+        let language = setting("VOICETOTEXT_LANGUAGE", "language");
+
+        let groq_api_key =
+            setting("GROQ_API_KEY", "groq_api_key").or_else(|| file_field("GROQ_API_KEY"));
+
+        Self {
+            backend,
+            model_path,
+            language,
+            groq_api_key,
+        }
     }
 }
 
@@ -26,32 +90,13 @@ pub fn resolve_config_path(
     base_dir.join("voicetotext").join("config.json")
 }
 
-pub fn resolve_api_key(
+fn non_empty_env(
     environment: &[(impl AsRef<str>, impl AsRef<str>)],
-    config_json: Option<&str>,
+    key: &str,
 ) -> Option<String> {
-    if let Some(env_key) = env_value(environment, "GROQ_API_KEY") {
-        let trimmed = env_key.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-
-    parse_api_key_from_config(config_json?).filter(|value| !value.trim().is_empty())
-}
-
-pub fn parse_api_key_from_config(config_json: &str) -> Option<String> {
-    let parsed: serde_json::Value = serde_json::from_str(config_json).ok()?;
-    for key in ["groq_api_key", "GROQ_API_KEY"] {
-        if let Some(value) = parsed.get(key).and_then(|item| item.as_str()) {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
-        }
-    }
-
-    None
+    env_value(environment, key)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn env_value(environment: &[(impl AsRef<str>, impl AsRef<str>)], key: &str) -> Option<String> {
@@ -77,35 +122,140 @@ fn expand_home(path: &str, home_dir: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    const HOME: &str = "/home/tester";
+    const NO_ENV: [(&str, &str); 0] = [];
+
+    fn resolve(
+        environment: &[(&str, &str)],
+        config_json: Option<&str>,
+    ) -> Config {
+        Config::resolve(environment, config_json, Path::new(HOME))
+    }
+
     #[test]
     fn environment_api_key_wins_over_config_file() {
         let environment = [
             ("GROQ_API_KEY", "env-key"),
             ("XDG_CONFIG_HOME", "/tmp/config"),
         ];
-        let config = r#"{"groq_api_key":"file-key"}"#;
+        let config = resolve(&environment, Some(r#"{"groq_api_key":"file-key"}"#));
 
-        let key = resolve_api_key(&environment, Some(config));
-
-        assert_eq!(key.as_deref(), Some("env-key"));
+        assert_eq!(config.groq_api_key.as_deref(), Some("env-key"));
     }
 
     #[test]
-    fn config_parser_accepts_both_supported_key_names() {
+    fn config_accepts_both_supported_api_key_names() {
         assert_eq!(
-            parse_api_key_from_config(r#"{"groq_api_key":"abc"}"#).as_deref(),
+            resolve(&NO_ENV, Some(r#"{"groq_api_key":"abc"}"#))
+                .groq_api_key
+                .as_deref(),
             Some("abc")
         );
         assert_eq!(
-            parse_api_key_from_config(r#"{"GROQ_API_KEY":"xyz"}"#).as_deref(),
+            resolve(&NO_ENV, Some(r#"{"GROQ_API_KEY":"xyz"}"#))
+                .groq_api_key
+                .as_deref(),
             Some("xyz")
+        );
+    }
+
+    #[test]
+    fn backend_defaults_to_local_even_with_api_key_present() {
+        assert_eq!(
+            resolve(&NO_ENV, None).backend,
+            TranscriptionBackendChoice::Local
+        );
+        assert_eq!(
+            resolve(&NO_ENV, Some(r#"{"groq_api_key":"abc"}"#)).backend,
+            TranscriptionBackendChoice::Local
+        );
+    }
+
+    #[test]
+    fn backend_groq_only_when_explicitly_selected() {
+        assert_eq!(
+            resolve(&NO_ENV, Some(r#"{"backend":"groq"}"#)).backend,
+            TranscriptionBackendChoice::Groq
+        );
+        assert_eq!(
+            resolve(
+                &[("VOICETOTEXT_BACKEND", "groq")],
+                Some(r#"{"backend":"local"}"#)
+            )
+            .backend,
+            TranscriptionBackendChoice::Groq
+        );
+        assert_eq!(
+            resolve(&[("VOICETOTEXT_BACKEND", "Local")], None).backend,
+            TranscriptionBackendChoice::Local
+        );
+    }
+
+    #[test]
+    fn unrecognized_backend_falls_back_to_local() {
+        assert_eq!(
+            resolve(&NO_ENV, Some(r#"{"backend":"grok"}"#)).backend,
+            TranscriptionBackendChoice::Local
+        );
+    }
+
+    #[test]
+    fn empty_env_overrides_are_ignored() {
+        let environment = [("VOICETOTEXT_BACKEND", ""), ("VOICETOTEXT_MODEL_PATH", " ")];
+        let config = resolve(
+            &environment,
+            Some(r#"{"backend":"local","model_path":"~/models/x.gguf"}"#),
+        );
+
+        assert_eq!(config.backend, TranscriptionBackendChoice::Local);
+        assert_eq!(config.model_path, PathBuf::from("/home/tester/models/x.gguf"));
+    }
+
+    #[test]
+    fn model_path_resolution_order() {
+        assert_eq!(
+            resolve(&NO_ENV, None).model_path,
+            PathBuf::from("/home/tester/.local/share/voicetotext/models")
+                .join(crate::DEFAULT_LOCAL_MODEL_FILE)
+        );
+        assert_eq!(
+            resolve(&NO_ENV, Some(r#"{"model_path":"~/models/x.gguf"}"#)).model_path,
+            PathBuf::from("/home/tester/models/x.gguf")
+        );
+        assert_eq!(
+            resolve(
+                &[("VOICETOTEXT_MODEL_PATH", "/opt/models/y.gguf")],
+                Some(r#"{"model_path":"~/models/x.gguf"}"#)
+            )
+            .model_path,
+            PathBuf::from("/opt/models/y.gguf")
+        );
+    }
+
+    #[test]
+    fn language_resolution_env_then_config_then_autodetect() {
+        assert_eq!(resolve(&NO_ENV, None).language, None);
+        assert_eq!(
+            resolve(&NO_ENV, Some(r#"{"language":"en-US"}"#))
+                .language
+                .as_deref(),
+            Some("en-US")
+        );
+        assert_eq!(
+            resolve(
+                &[("VOICETOTEXT_LANGUAGE", "de-DE")],
+                Some(r#"{"language":"en-US"}"#)
+            )
+            .language
+            .as_deref(),
+            Some("de-DE")
         );
     }
 
     #[test]
     fn override_config_path_wins() {
         let environment = [("VOICETOTEXT_CONFIG_PATH", "~/custom/config.json")];
-        let path = resolve_config_path(&environment, Path::new("/home/tester"));
+        let path = resolve_config_path(&environment, Path::new(HOME));
 
         assert_eq!(path, PathBuf::from("/home/tester/custom/config.json"));
     }
@@ -113,7 +263,7 @@ mod tests {
     #[test]
     fn xdg_config_path_is_used_when_present() {
         let environment = [("XDG_CONFIG_HOME", "/home/tester/.config-alt")];
-        let path = resolve_config_path(&environment, Path::new("/home/tester"));
+        let path = resolve_config_path(&environment, Path::new(HOME));
 
         assert_eq!(
             path,
@@ -123,8 +273,7 @@ mod tests {
 
     #[test]
     fn default_config_path_falls_back_to_dot_config() {
-        let environment: [(&str, &str); 0] = [];
-        let path = resolve_config_path(&environment, Path::new("/home/tester"));
+        let path = resolve_config_path(&NO_ENV, Path::new(HOME));
 
         assert_eq!(
             path,

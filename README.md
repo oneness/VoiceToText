@@ -96,12 +96,16 @@ The Linux implementation uses XDG config resolution.
 - Default config file: `~/.config/voicetotext/config.json`
 - Override: `VOICETOTEXT_CONFIG_PATH=/absolute/path/to/config.json`
 
-Example:
+On Linux, no config file is needed: local on-device transcription (via
+transcribe.cpp) is the default, and the model downloads automatically on
+first run — see [linux/README.md](linux/README.md).
+
+To use the Groq cloud backend instead:
 
 ```bash
 mkdir -p ~/.config/voicetotext
 cat > ~/.config/voicetotext/config.json <<'JSON'
-{"groq_api_key":"your-groq-api-key"}
+{"backend":"groq","groq_api_key":"your-groq-api-key"}
 JSON
 ```
 

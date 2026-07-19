@@ -16,10 +16,13 @@ use futures_util::StreamExt;
 use tokio::sync::{mpsc, watch};
 
 use crate::autopaste::{AutoPasteController, AutoPasteStatus};
+use crate::engine::LocalStream;
+use crate::recorder::StreamingPwRecorder;
 use crate::{
     AppState, AudioCapture, ClipboardCopyError, CompletionSoundError,
-    PwRecordRecorder, append_transcript_to_journal, build_groq_transcription_request,
-    copy_to_clipboard, execute_http_request, install_linux_icon_assets, journal_stamp,
+    LocalTranscribeError, PwRecordRecorder, TranscriptionEngine,
+    append_transcript_to_journal, build_groq_transcription_request, copy_to_clipboard,
+    execute_http_request, install_linux_icon_assets, journal_stamp,
     parse_transcription_response, play_completion_sound, probe_desktop_capabilities,
     resolve_home_dir, resolve_journal_dir,
 };
@@ -192,6 +195,7 @@ pub enum HotkeyDaemonError {
     Portal(ashpd::Error),
     Recorder(crate::RecorderError),
     Transcription(crate::GroqRequestError),
+    LocalTranscription(LocalTranscribeError),
     Transport(crate::TransportError),
     Journal(std::io::Error),
 }
@@ -205,6 +209,7 @@ impl std::fmt::Display for HotkeyDaemonError {
             Self::Portal(error) => write!(f, "{error}"),
             Self::Recorder(error) => write!(f, "{error}"),
             Self::Transcription(error) => write!(f, "{error}"),
+            Self::LocalTranscription(error) => write!(f, "{error}"),
             Self::Transport(error) => write!(f, "{error}"),
             Self::Journal(error) => write!(f, "{error}"),
         }
@@ -231,6 +236,12 @@ impl From<crate::GroqRequestError> for HotkeyDaemonError {
     }
 }
 
+impl From<LocalTranscribeError> for HotkeyDaemonError {
+    fn from(value: LocalTranscribeError) -> Self {
+        Self::LocalTranscription(value)
+    }
+}
+
 impl From<crate::TransportError> for HotkeyDaemonError {
     fn from(value: crate::TransportError) -> Self {
         Self::Transport(value)
@@ -245,14 +256,14 @@ impl From<std::io::Error> for HotkeyDaemonError {
 
 pub async fn run_hotkey_daemon(
     environment: &[(String, String)],
-    api_key: &str,
+    engine: &TranscriptionEngine,
 ) -> Result<(), HotkeyDaemonError> {
-    run_hotkey_daemon_with_control(environment, api_key, None, None, None).await
+    run_hotkey_daemon_with_control(environment, engine, None, None, None).await
 }
 
 pub async fn run_hotkey_daemon_with_control(
     environment: &[(String, String)],
-    api_key: &str,
+    engine: &TranscriptionEngine,
     event_sender: Option<mpsc::UnboundedSender<DaemonEvent>>,
     mut shutdown_receiver: Option<watch::Receiver<bool>>,
     mut command_receiver: Option<mpsc::UnboundedReceiver<DaemonCommand>>,
@@ -276,7 +287,7 @@ pub async fn run_hotkey_daemon_with_control(
 
     let global_shortcuts = GlobalShortcuts::new().await?;
     let mut activated = global_shortcuts.receive_activated().await?;
-    let mut active_recording: Option<PwRecordRecorder> = None;
+    let mut active_recording: Option<ActiveRecording> = None;
     let mut session_backoff = Duration::from_secs(1);
 
     'reconnect: loop {
@@ -393,7 +404,7 @@ pub async fn run_hotkey_daemon_with_control(
                             &mut active_recording,
                             &mut auto_paste_controller,
                             &event_sender,
-                            api_key,
+                            engine,
                             &journal_dir,
                         )
                         .await?;
@@ -405,7 +416,7 @@ pub async fn run_hotkey_daemon_with_control(
                         &mut active_recording,
                         &mut auto_paste_controller,
                         &event_sender,
-                        api_key,
+                        engine,
                         &journal_dir,
                     )
                     .await?;
@@ -423,7 +434,7 @@ pub async fn run_hotkey_daemon_with_control(
                                 &mut active_recording,
                                 &mut auto_paste_controller,
                                 &event_sender,
-                                api_key,
+                                engine,
                                 &journal_dir,
                             )
                             .await?;
@@ -468,12 +479,67 @@ pub(crate) fn ensure_host_desktop_entry(home_dir: &Path) -> std::io::Result<Path
     Ok(desktop_path)
 }
 
+/// A recording in progress. Local recordings stream audio into the model as
+/// it is captured; Groq recordings buffer an Opus/OGG upload.
+enum ActiveRecording {
+    Batch(PwRecordRecorder),
+    Streaming {
+        recorder: StreamingPwRecorder,
+        stream: LocalStream,
+    },
+}
+
+impl ActiveRecording {
+    fn start(engine: &TranscriptionEngine) -> Result<Self, HotkeyDaemonError> {
+        match engine {
+            TranscriptionEngine::Local(transcriber) => {
+                let stream = transcriber.begin_stream();
+                let recorder = StreamingPwRecorder::start(stream.chunk_sender())?;
+                Ok(Self::Streaming { recorder, stream })
+            }
+            TranscriptionEngine::Groq { .. } => Ok(Self::Batch(PwRecordRecorder::start()?)),
+        }
+    }
+
+    /// Stops capture and produces the transcript (blocking).
+    fn stop_and_transcribe(
+        self,
+        engine: &TranscriptionEngine,
+    ) -> Result<String, HotkeyDaemonError> {
+        match self {
+            Self::Batch(recorder) => {
+                let audio = recorder.stop()?;
+                transcribe_audio_capture(&audio, engine)
+            }
+            Self::Streaming { recorder, stream } => {
+                // Always finish() (joining the worker thread) even when the
+                // stop failed, so no worker is left running detached.
+                let stopped = recorder.stop();
+                let finished = stream.finish();
+                stopped?;
+                Ok(finished?)
+            }
+        }
+    }
+
+    fn abandon(self) {
+        let result = match self {
+            Self::Batch(recorder) => recorder.stop().map(|_| ()),
+            // Dropping `stream` (bound in the pattern) abandons the worker.
+            Self::Streaming { recorder, stream: _ } => recorder.stop().map(|_| ()),
+        };
+        if let Err(error) = result {
+            eprintln!("warning: failed to stop recording during shutdown: {error}");
+        }
+    }
+}
+
 fn handle_completed_recording(
-    audio: AudioCapture,
-    api_key: &str,
+    recording: ActiveRecording,
+    engine: &TranscriptionEngine,
     journal_dir: &PathBuf,
 ) -> Result<CompletedRecordingOutcome, HotkeyDaemonError> {
-    let transcript = transcribe_audio_capture(&audio, api_key)?;
+    let transcript = recording.stop_and_transcribe(engine)?;
     let stamp = journal_stamp(chrono::Local::now());
     let journal_path = append_transcript_to_journal(journal_dir, &stamp, &transcript)?;
 
@@ -516,11 +582,9 @@ struct CompletedRecordingOutcome {
     journal_path: PathBuf,
 }
 
-fn stop_active_recording(recorder: Option<PwRecordRecorder>) {
-    if let Some(recorder) = recorder {
-        if let Err(error) = recorder.stop() {
-            eprintln!("warning: failed to stop active recording during shutdown: {error}");
-        }
+fn stop_active_recording(recording: Option<ActiveRecording>) {
+    if let Some(recording) = recording {
+        recording.abandon();
     }
 }
 
@@ -534,36 +598,46 @@ fn send_daemon_event(
 }
 
 async fn toggle_recording(
-    active_recording: &mut Option<PwRecordRecorder>,
+    active_recording: &mut Option<ActiveRecording>,
     auto_paste_controller: &mut AutoPasteController,
     event_sender: &Option<mpsc::UnboundedSender<DaemonEvent>>,
-    api_key: &str,
+    engine: &TranscriptionEngine,
     journal_dir: &PathBuf,
 ) -> Result<(), HotkeyDaemonError> {
     match active_recording.take() {
-        None => {
-            let output_path = crate::temp_recording_path();
-            let recorder = PwRecordRecorder::start(output_path)?;
-            eprintln!("recording started");
-            send_daemon_event(event_sender, DaemonEvent::StateChanged(AppState::Recording));
-            *active_recording = Some(recorder);
-        }
-        Some(recorder) => {
+        None => match ActiveRecording::start(engine) {
+            Ok(recording) => {
+                eprintln!("recording started");
+                send_daemon_event(event_sender, DaemonEvent::StateChanged(AppState::Recording));
+                *active_recording = Some(recording);
+            }
+            Err(error) => {
+                let message = format!("failed to start recording: {error}");
+                eprintln!("warning: {message}");
+                send_daemon_event(event_sender, DaemonEvent::Warning(message));
+            }
+        },
+        Some(recording) => {
             eprintln!("recording stopped, transcribing...");
             send_daemon_event(
                 event_sender,
                 DaemonEvent::StateChanged(AppState::Transcribing),
             );
-            let audio = recorder.stop()?;
-            let api_key = api_key.to_string();
+            let engine = engine.clone();
             let journal_dir = journal_dir.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                handle_completed_recording(audio, &api_key, &journal_dir)
+            // Any per-recording failure (empty capture, transcription error,
+            // even a panic in the task) surfaces as a Warning below — never a
+            // daemon exit.
+            let result = match tokio::task::spawn_blocking(move || {
+                handle_completed_recording(recording, &engine, &journal_dir)
             })
             .await
-            .map_err(|error| {
-                HotkeyDaemonError::Journal(std::io::Error::other(error.to_string()))
-            })?;
+            {
+                Ok(result) => result,
+                Err(join_error) => Err(HotkeyDaemonError::Journal(std::io::Error::other(
+                    format!("transcription task failed: {join_error}"),
+                ))),
+            };
 
             match result {
                 Ok(outcome) => {
@@ -598,23 +672,28 @@ async fn toggle_recording(
 
 pub fn transcribe_audio_capture(
     audio: &AudioCapture,
-    api_key: &str,
+    engine: &TranscriptionEngine,
 ) -> Result<String, HotkeyDaemonError> {
-    let boundary = format!(
-        "Boundary-{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-    );
-    let request = build_groq_transcription_request(
-        audio,
-        &crate::GroqRequestOptions::new(api_key),
-        &boundary,
-    )?;
-    let response_body = execute_http_request(request)?;
-    let transcript = parse_transcription_response(&response_body)?;
-    Ok(transcript)
+    match engine {
+        TranscriptionEngine::Local(transcriber) => Ok(transcriber.transcribe(audio)?),
+        TranscriptionEngine::Groq { api_key } => {
+            let boundary = format!(
+                "Boundary-{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            );
+            let request = build_groq_transcription_request(
+                audio,
+                &crate::GroqRequestOptions::new(api_key),
+                &boundary,
+            )?;
+            let response_body = execute_http_request(request)?;
+            let transcript = parse_transcription_response(&response_body)?;
+            Ok(transcript)
+        }
+    }
 }
 
 #[cfg(test)]

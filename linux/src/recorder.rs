@@ -21,6 +21,7 @@ pub enum RecorderError {
     EncoderFailed(ExitStatus),
     MissingOutput(PathBuf),
     Read(io::Error),
+    EmptyCapture,
 }
 
 impl std::fmt::Display for RecorderError {
@@ -43,6 +44,7 @@ impl std::fmt::Display for RecorderError {
                 )
             }
             Self::Read(error) => write!(f, "failed to read recorded audio: {error}"),
+            Self::EmptyCapture => write!(f, "recording produced no audio data"),
         }
     }
 }
@@ -114,42 +116,56 @@ impl FfmpegEncodeCommand {
     }
 }
 
+/// Buffered capture: pw-record piped into ffmpeg, producing an Opus/OGG file
+/// (used for Groq uploads and the one-shot CLI record mode).
 pub struct PwRecordRecorder {
     pw_record: Child,
     ffmpeg: Child,
     output_path: PathBuf,
 }
 
-impl PwRecordRecorder {
-    pub fn start(output_path: PathBuf) -> Result<Self, RecorderError> {
-        let target = env::var(SOURCE_ENV_KEY).ok();
-        Self::start_with_target(output_path, target.as_deref())
+/// Spawns pw-record with piped stdout, reaping the child on setup failure.
+fn spawn_pw_record() -> Result<(Child, std::process::ChildStdout), RecorderError> {
+    let target = env::var(SOURCE_ENV_KEY).ok();
+    let record_command = PwRecordCommand::for_stdout_raw(target.as_deref());
+    let mut pw_record = Command::new(record_command.program)
+        .args(&record_command.args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(RecorderError::Spawn)?;
+
+    match pw_record.stdout.take() {
+        Some(stdout) => Ok((pw_record, stdout)),
+        None => {
+            let _ = pw_record.kill();
+            let _ = pw_record.wait();
+            Err(RecorderError::Spawn(io::Error::other(
+                "failed to capture pw-record stdout",
+            )))
+        }
     }
+}
 
-    pub fn start_with_target(
-        output_path: PathBuf,
-        target: Option<&str>,
-    ) -> Result<Self, RecorderError> {
-        let record_command = PwRecordCommand::for_stdout_raw(target);
-        let mut pw_record = Command::new(record_command.program)
-            .args(&record_command.args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(RecorderError::Spawn)?;
+/// Stops pw-record and always reaps it: SIGINT for a clean stop, escalating to
+/// kill if the signal cannot be delivered, so downstream pipe readers are
+/// guaranteed to see EOF even on the error path.
+fn stop_pw_record(pw_record: &mut Child) -> Result<(), RecorderError> {
+    if let Err(error) = send_sigint(pw_record.id()) {
+        let _ = pw_record.kill();
+        let _ = pw_record.wait();
+        return Err(RecorderError::Signal(error));
+    }
+    pw_record.wait().map_err(RecorderError::Wait)?;
+    Ok(())
+}
 
-        let pw_stdout = match pw_record.stdout.take() {
-            Some(stdout) => stdout,
-            None => {
-                let _ = pw_record.kill();
-                let _ = pw_record.wait();
-                return Err(RecorderError::Spawn(io::Error::other(
-                    "failed to capture pw-record stdout",
-                )));
-            }
-        };
+impl PwRecordRecorder {
+    pub fn start() -> Result<Self, RecorderError> {
+        let (mut pw_record, pw_stdout) = spawn_pw_record()?;
 
+        let output_path = temp_recording_path();
         let encode_command = FfmpegEncodeCommand::for_output(&output_path);
         let ffmpeg = match Command::new(encode_command.program)
             .args(&encode_command.args)
@@ -177,8 +193,12 @@ impl PwRecordRecorder {
     }
 
     pub fn stop(mut self) -> Result<AudioCapture, RecorderError> {
-        send_sigint(self.pw_record.id()).map_err(RecorderError::Signal)?;
-        self.pw_record.wait().map_err(RecorderError::Wait)?;
+        if let Err(error) = stop_pw_record(&mut self.pw_record) {
+            // pw-record is reaped either way; don't leave ffmpeg behind.
+            let _ = self.ffmpeg.kill();
+            let _ = self.ffmpeg.wait();
+            return Err(error);
+        }
 
         let ffmpeg_status = self.ffmpeg.wait().map_err(RecorderError::EncoderWait)?;
         if !ffmpeg_status.success() {
@@ -213,10 +233,75 @@ impl PwRecordRecorder {
 }
 
 pub fn record_for_duration(duration: Duration) -> Result<AudioCapture, RecorderError> {
-    let output_path = temp_recording_path();
-    let recorder = PwRecordRecorder::start(output_path)?;
+    let recorder = PwRecordRecorder::start()?;
     std::thread::sleep(duration);
     recorder.stop()
+}
+
+/// Captures raw s16le PCM and forwards it in small chunks to a channel as it
+/// arrives (for live streaming transcription) instead of buffering to the end.
+pub struct StreamingPwRecorder {
+    pw_record: Child,
+    reader: std::thread::JoinHandle<io::Result<u64>>,
+}
+
+impl StreamingPwRecorder {
+    pub fn start(chunk_sender: std::sync::mpsc::Sender<Vec<u8>>) -> Result<Self, RecorderError> {
+        let (pw_record, mut pw_stdout) = spawn_pw_record()?;
+
+        let reader = std::thread::spawn(move || {
+            use std::io::Read;
+            // 8192 bytes = 256 ms of 16 kHz mono s16le.
+            let mut buffer = [0u8; 8192];
+            // Pipe reads can split mid-sample; carry the odd trailing byte so
+            // every chunk sent downstream stays aligned to whole s16 samples.
+            let mut carry: Option<u8> = None;
+            let mut total: u64 = 0;
+            loop {
+                match pw_stdout.read(&mut buffer) {
+                    Ok(0) => return Ok(total),
+                    Ok(n) => {
+                        total += n as u64;
+                        let mut chunk = Vec::with_capacity(n + 1);
+                        chunk.extend(carry.take());
+                        chunk.extend_from_slice(&buffer[..n]);
+                        if chunk.len() % 2 == 1 {
+                            carry = chunk.pop();
+                        }
+                        // On send failure the transcription side went away;
+                        // keep draining so pw-record never blocks on a full pipe.
+                        if !chunk.is_empty() {
+                            let _ = chunk_sender.send(chunk);
+                        }
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+        });
+
+        Ok(Self { pw_record, reader })
+    }
+
+    /// Stops recording. All captured audio is guaranteed to have been sent to
+    /// the channel when this returns; the recorder's sender clone is dropped
+    /// with the reader thread.
+    pub fn stop(mut self) -> Result<u64, RecorderError> {
+        // pw-record is reaped even when stopping errored, so the reader hits
+        // EOF; always join it (dropping its channel sender) before returning.
+        let stop_result = stop_pw_record(&mut self.pw_record);
+        let read_result = self
+            .reader
+            .join()
+            .map_err(|_| RecorderError::Read(io::Error::other("pcm reader thread panicked")));
+        stop_result?;
+        let bytes = read_result?.map_err(RecorderError::Read)?;
+        if bytes == 0 {
+            return Err(RecorderError::EmptyCapture);
+        }
+        eprintln!("recording captured: raw pcm s16le bytes={bytes} (streamed)");
+        Ok(bytes)
+    }
 }
 
 pub fn temp_recording_path() -> PathBuf {
