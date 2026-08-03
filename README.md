@@ -2,6 +2,11 @@
 
 Press a hotkey, speak, and the text appears where you're typing. Works on macOS and Linux. No window, no clicks.
 
+On **Linux** it transcribes **on-device by default** — no API key, no account,
+and the audio never leaves the machine. The model downloads itself on first run
+and transcription streams live while you speak. On **macOS** it transcribes via
+the Groq cloud API, which Linux can also be configured to use.
+
 ## Quick links
 
 - **[Overview](https://www.birkey.co/VoiceToText/)** — what it is and how it works (space-bar to navigate)
@@ -9,12 +14,18 @@ Press a hotkey, speak, and the text appears where you're typing. Works on macOS 
 
 ## Quick Start
 
-### 1. Prerequisites
+**On Linux**, nothing here is needed — see [linux/README.md](linux/README.md).
+Build it, run the daemon, and the local model is fetched on first use.
+
+### macOS
+
+#### 1. Prerequisites
 - macOS 14+
 - Xcode 15+
-- A Groq API key: https://console.groq.com/keys
+- A Groq API key: https://console.groq.com/keys — macOS has no on-device
+  backend, so this one is required
 
-### 2. Configure your Groq API key
+#### 2. Configure your Groq API key
 Use one of these methods.
 
 Option A (recommended): interactive setup (works for Finder/Xcode/Terminal launches)
@@ -40,7 +51,7 @@ Optional override for custom config location:
 export VOICETOTEXT_CONFIG_PATH="/absolute/path/to/config.json"
 ```
 
-### 3. Build and run
+#### 3. Build and run
 ```bash
 make compile
 make run
@@ -87,20 +98,17 @@ make access    # open Accessibility settings
 
 ## Linux
 
-See [linux/README.md](linux/README.md) for the full Linux setup guide.
+See [linux/README.md](linux/README.md) for the full setup guide.
 
-## Linux Config Path
+No config file is needed: on-device transcription via transcribe.cpp is the
+default, and the model downloads automatically on first run.
 
-The Linux implementation uses XDG config resolution.
+Config, if you want it, uses XDG resolution:
 
 - Default config file: `~/.config/voicetotext/config.json`
 - Override: `VOICETOTEXT_CONFIG_PATH=/absolute/path/to/config.json`
 
-On Linux, no config file is needed: local on-device transcription (via
-transcribe.cpp) is the default, and the model downloads automatically on
-first run — see [linux/README.md](linux/README.md).
-
-To use the Groq cloud backend instead:
+To use the Groq cloud backend instead of the local one:
 
 ```bash
 mkdir -p ~/.config/voicetotext
