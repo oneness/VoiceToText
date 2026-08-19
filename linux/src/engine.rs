@@ -3,6 +3,12 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
+/// At 8 KiB per recorder chunk this allows roughly eight seconds of audio to
+/// wait for inference.  An unbounded channel can consume all available memory
+/// if transcription falls behind capture (for example under heavy system
+/// load), so backpressure is intentional here.
+const STREAM_CHANNEL_CAPACITY: usize = 32;
+
 use transcribe_cpp::{Model, RunOptions, Session, StreamOptions};
 
 use crate::AudioCapture;
@@ -42,10 +48,14 @@ impl std::fmt::Display for LocalTranscribeError {
                 write!(f, "failed to load model {}: {source}", path.display())
             }
             Self::Engine(error) => write!(f, "local transcription failed: {error}"),
-            Self::DecoderMissing => write!(f, "ffmpeg is required to decode audio for the local engine"),
+            Self::DecoderMissing => {
+                write!(f, "ffmpeg is required to decode audio for the local engine")
+            }
             Self::DecoderSpawn(error) => write!(f, "failed to start ffmpeg decoder: {error}"),
             Self::DecoderIo(error) => write!(f, "ffmpeg decode failed: {error}"),
-            Self::DecoderFailed(status) => write!(f, "ffmpeg decoder exited unsuccessfully: {status}"),
+            Self::DecoderFailed(status) => {
+                write!(f, "ffmpeg decoder exited unsuccessfully: {status}")
+            }
             Self::EmptyAudio => write!(f, "decoded audio is empty"),
             Self::EmptyTranscript => write!(f, "local transcription produced no text"),
         }
@@ -89,12 +99,11 @@ impl LocalTranscriber {
     /// essentially ready the moment recording stops. Models without streaming
     /// support fall back to a batch run over the accumulated audio.
     pub fn begin_stream(&self) -> LocalStream {
-        let (chunk_sender, chunk_receiver) = mpsc::channel::<Vec<u8>>();
+        let (chunk_sender, chunk_receiver) = mpsc::sync_channel::<Vec<u8>>(STREAM_CHANNEL_CAPACITY);
         let model = self.model.clone();
         let run_options = self.run_options();
-        let worker = std::thread::spawn(move || {
-            stream_worker(&model, &run_options, &chunk_receiver)
-        });
+        let worker =
+            std::thread::spawn(move || stream_worker(&model, &run_options, &chunk_receiver));
         LocalStream {
             chunk_sender,
             worker,
@@ -105,12 +114,12 @@ impl LocalTranscriber {
 /// An in-flight streaming transcription. Feed it via the sender from
 /// [`LocalStream::chunk_sender`]; `finish()` waits for the final text.
 pub struct LocalStream {
-    chunk_sender: mpsc::Sender<Vec<u8>>,
+    chunk_sender: mpsc::SyncSender<Vec<u8>>,
     worker: JoinHandle<Result<String, LocalTranscribeError>>,
 }
 
 impl LocalStream {
-    pub fn chunk_sender(&self) -> mpsc::Sender<Vec<u8>> {
+    pub fn chunk_sender(&self) -> mpsc::SyncSender<Vec<u8>> {
         self.chunk_sender.clone()
     }
 
@@ -123,11 +132,11 @@ impl LocalStream {
             worker,
         } = self;
         drop(chunk_sender);
-        worker
-            .join()
-            .map_err(|_| LocalTranscribeError::Engine(transcribe_cpp::Error::Busy(
+        worker.join().map_err(|_| {
+            LocalTranscribeError::Engine(transcribe_cpp::Error::Busy(
                 "streaming worker panicked".into(),
-            )))?
+            ))
+        })?
     }
 }
 
@@ -281,8 +290,8 @@ mod tests {
             bytes,
             Some(PathBuf::from(&audio_path)),
         );
-        let transcriber = LocalTranscriber::load(Path::new(&model_path), test_language())
-            .expect("load model");
+        let transcriber =
+            LocalTranscriber::load(Path::new(&model_path), test_language()).expect("load model");
         let transcript = transcriber.transcribe(&audio).expect("transcribe");
 
         eprintln!("transcript: {transcript}");
@@ -298,8 +307,8 @@ mod tests {
         let audio_path = std::env::var("VOICETOTEXT_TEST_S16LE").expect("VOICETOTEXT_TEST_S16LE");
         let bytes = std::fs::read(&audio_path).expect("read raw pcm sample");
 
-        let transcriber = LocalTranscriber::load(Path::new(&model_path), test_language())
-            .expect("load model");
+        let transcriber =
+            LocalTranscriber::load(Path::new(&model_path), test_language()).expect("load model");
         let stream = transcriber.begin_stream();
         let sender = stream.chunk_sender();
         for chunk in bytes.chunks(8192) {

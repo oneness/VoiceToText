@@ -246,7 +246,9 @@ pub struct StreamingPwRecorder {
 }
 
 impl StreamingPwRecorder {
-    pub fn start(chunk_sender: std::sync::mpsc::Sender<Vec<u8>>) -> Result<Self, RecorderError> {
+    pub fn start(
+        chunk_sender: std::sync::mpsc::SyncSender<Vec<u8>>,
+    ) -> Result<Self, RecorderError> {
         let (pw_record, mut pw_stdout) = spawn_pw_record()?;
 
         let reader = std::thread::spawn(move || {
@@ -268,10 +270,13 @@ impl StreamingPwRecorder {
                         if chunk.len() % 2 == 1 {
                             carry = chunk.pop();
                         }
-                        // On send failure the transcription side went away;
-                        // keep draining so pw-record never blocks on a full pipe.
-                        if !chunk.is_empty() {
-                            let _ = chunk_sender.send(chunk);
+                        // A bounded channel applies backpressure when inference
+                        // falls behind capture. Blocking this reader is safe:
+                        // pw-record then blocks on its pipe instead of letting
+                        // queued audio grow until the machine runs out of RAM.
+                        if !chunk.is_empty() && chunk_sender.send(chunk).is_err() {
+                            // The transcription worker exited. Keep draining so
+                            // pw-record can still be stopped and reaped cleanly.
                         }
                     }
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
