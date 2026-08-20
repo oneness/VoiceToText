@@ -32,15 +32,20 @@
   .slide {
     display: none;
     position: fixed;
-    inset: 0;
+    inset: 0 0 64px;
     justify-content: center;
     align-items: center;
+    /* Keep tall slides in a scroll area that ends above the fixed controls. */
     padding: 48px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .slide.active { display: flex; }
 
   .box {
+    flex: 0 0 auto;
+    margin: auto;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 16px;
@@ -234,14 +239,53 @@
   }
 
   @media (max-width: 720px) {
-    .box { padding: 36px 28px; }
+    .slide {
+      inset: 0 0 64px;
+      align-items: flex-start;
+      padding: 16px;
+    }
+    .box {
+      margin: 0 auto;
+      padding: 28px 20px;
+      border-radius: 12px;
+    }
     h1 { font-size: 40px; }
     h2 { font-size: 28px; }
     .big { font-size: 18px; }
     .tagline { font-size: 20px; }
-    .mono { font-size: 14px; padding: 16px 20px; }
+    .mono {
+      display: block;
+      width: 100%;
+      font-size: 14px !important;
+      padding: 16px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
     .two-col { grid-template-columns: 1fr; }
     .flow { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); }
+    .col-box { padding: 16px; }
+    table { font-size: 13px; }
+    th, td {
+      padding: 8px;
+      overflow-wrap: anywhere;
+    }
+    #controls {
+      bottom: 14px;
+      gap: 10px;
+      width: calc(100% - 32px);
+      justify-content: center;
+    }
+    #controls button { padding: 8px 14px; }
+  }
+
+  @media (max-width: 380px) {
+    h1 { font-size: 34px; }
+    h2 { font-size: 25px; }
+    .big { font-size: 16px; }
+    .tagline { font-size: 18px; }
+    .label { margin-bottom: 12px; }
+    #controls button { padding: 8px 10px; }
   }
 </style>
 </head>
