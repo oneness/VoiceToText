@@ -13,10 +13,10 @@ use transcribe_cpp::{Model, RunOptions, Session, StreamOptions};
 
 use crate::AudioCapture;
 
-/// Default local model: Nemotron 3.5 ASR Streaming 0.6B (multilingual,
-/// cache-aware streaming + offline batch), Q8_0 quant.
-pub const DEFAULT_LOCAL_MODEL_FILE: &str = "nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf";
-pub const DEFAULT_LOCAL_MODEL_URL: &str = "https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf";
+/// Default local model: Nemotron Speech Streaming English 0.6B
+/// (cache-aware streaming + offline batch), Q8_0 quant.
+pub const DEFAULT_LOCAL_MODEL_FILE: &str = "nemotron-speech-streaming-en-0.6b-Q8_0.gguf";
+pub const DEFAULT_LOCAL_MODEL_URL: &str = "https://huggingface.co/handy-computer/nemotron-speech-streaming-en-0.6b-gguf/resolve/main/nemotron-speech-streaming-en-0.6b-Q8_0.gguf";
 
 /// Which transcription implementation the app runs with. Chosen once at
 /// startup from config; everything downstream just calls `transcribe`.

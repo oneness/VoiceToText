@@ -49,29 +49,29 @@ ELF interpreter patching.
 
 Transcription runs on-device via
 [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) with the
-Nemotron 3.5 ASR Streaming 0.6B model (multilingual, ~716 MB, Q8_0 quant).
+Nemotron Speech Streaming English 0.6B model (~696 MB, Q8_0 quant).
 Audio is transcribed **live while you speak** — the transcript is ready
 almost instantly when you stop recording, regardless of how long you spoke.
 
 **No setup is required**: local is the default backend, and the model is
-downloaded automatically on first run (one-time, ~716 MB, resumable if
+downloaded automatically on first run (one-time, ~696 MB, resumable if
 interrupted) to `~/.local/share/voicetotext/models/`. To download it
 manually instead:
 
 ```bash
 mkdir -p ~/.local/share/voicetotext/models
-curl -L -o ~/.local/share/voicetotext/models/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf \
-  'https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf'
+curl -L -o ~/.local/share/voicetotext/models/nemotron-speech-streaming-en-0.6b-Q8_0.gguf \
+  'https://huggingface.co/handy-computer/nemotron-speech-streaming-en-0.6b-gguf/resolve/main/nemotron-speech-streaming-en-0.6b-Q8_0.gguf'
 ```
 
 Optional keys in `~/.config/voicetotext/config.json`: any GGUF model
 supported by transcribe.cpp works — point `"model_path"` at it (`~` is
 expanded; models without streaming support, e.g. Parakeet TDT, fall back to
-batch transcription after recording stops), and `"language"` (e.g. `"en-US"`)
-pins the transcription language instead of autodetecting:
+batch transcription after recording stops). The default model is English-only;
+`"language"` is useful only when selecting a multilingual model:
 
 ```json
-{"model_path":"~/.local/share/voicetotext/models/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf","language":"en-US"}
+{"model_path":"~/.local/share/voicetotext/models/nemotron-speech-streaming-en-0.6b-Q8_0.gguf"}
 ```
 
 Environment overrides: `VOICETOTEXT_BACKEND=local|groq`,

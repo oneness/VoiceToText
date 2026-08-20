@@ -21,7 +21,7 @@ audio capture (AVAudioRecorder / pw-record)
     │
     ▼
 transcription
-  · Linux local:  transcribe.cpp (ggml) + Nemotron 3.5 ASR Streaming 0.6B GGUF,
+  · Linux local:  transcribe.cpp (ggml) + Nemotron Speech Streaming English 0.6B GGUF,
                   offline, streamed live while recording
   · cloud:        Groq Whisper API (whisper-large-v3-turbo) — macOS, or Linux with backend=groq
     │
@@ -132,7 +132,7 @@ Stop sends SIGINT to `pw-record` via `libc::kill`, then drains the sink.
 
 Selected at startup by `config.rs::resolve_backend()` into a `TranscriptionEngine` (`engine.rs`):
 
-- **local (offline)** — `transcribe-cpp` (ggml) loads a Nemotron 3.5 ASR Streaming 0.6B GGUF once at startup (~0.3 s). Daemon recordings are transcribed **live**: `StreamingPwRecorder` forwards raw PCM chunks (256 ms) over a channel to a worker thread that feeds the model's streaming session, so the final transcript is ready ~instantly at stop (measured ~0.6 s stop-to-paste including journal/clipboard). Models without streaming support fall back to a batch run over the accumulated audio automatically. CLI file/record modes use batch: audio (file or recorder OGG) is decoded to PCM via `ffmpeg`. Model auto-resolves to `~/.local/share/voicetotext/models/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf` and is **auto-downloaded on first run** (streamed to a `.partial` file, resumable via HTTP Range, size-verified, renamed into place; custom `model_path` values are never auto-downloaded). Overrides: `model_path`/`language` config keys, `VOICETOTEXT_MODEL_PATH`, `VOICETOTEXT_LANGUAGE`.
+- **local (offline)** — `transcribe-cpp` (ggml) loads a Nemotron Speech Streaming English 0.6B GGUF once at startup (~0.3 s). Daemon recordings are transcribed **live**: `StreamingPwRecorder` forwards raw PCM chunks (256 ms) over a channel to a worker thread that feeds the model's streaming session, so the final transcript is ready ~instantly at stop (measured ~0.6 s stop-to-paste including journal/clipboard). Models without streaming support fall back to a batch run over the accumulated audio automatically. CLI file/record modes use batch: audio (file or recorder OGG) is decoded to PCM via `ffmpeg`. Model auto-resolves to `~/.local/share/voicetotext/models/nemotron-speech-streaming-en-0.6b-Q8_0.gguf` and is **auto-downloaded on first run** (streamed to a `.partial` file, resumable via HTTP Range, size-verified, renamed into place; custom `model_path` values are never auto-downloaded). Overrides: `model_path`/`language` config keys, `VOICETOTEXT_MODEL_PATH`, `VOICETOTEXT_LANGUAGE`.
 - **groq (cloud)** — same API and model as macOS. `build_groq_transcription_request()` in `groq.rs` is pure (no I/O) and fully unit-tested. `execute_http_request()` in `transport.rs` uses `reqwest::blocking` inside `tokio::task::spawn_blocking`.
 
 ### Auto-paste
