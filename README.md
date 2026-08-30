@@ -1,6 +1,6 @@
 # VoiceToText
 
-Press a hotkey, speak, and the text appears where you're typing. Works on macOS and Linux. No window, no clicks.
+Press a hotkey and speak to transcribe text on macOS or Linux. Linux copies the result to the clipboard; macOS also pastes it automatically.
 
 On **Linux** it transcribes **on-device by default** — no API key, no account,
 and the audio never leaves the machine. The model downloads itself on first run
@@ -83,7 +83,8 @@ make access
 ## Usage
 - Press `Option + Space` to start recording.
 - Press `Option + Space` again to stop recording and transcribe.
-- The transcribed text is copied to clipboard and pasted automatically.
+- On macOS, the transcribed text is copied to the clipboard and pasted automatically.
+- On Linux, it is copied to the clipboard for you to paste manually.
 - Click the menu bar icon to start/stop recording or quit.
 
 ## Common Commands

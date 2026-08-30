@@ -1,4 +1,3 @@
-mod autopaste;
 mod config;
 mod desktop;
 mod engine;

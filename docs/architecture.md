@@ -2,12 +2,12 @@
 
 ## Overview
 
-VoiceToText is a global-hotkey dictation utility that runs as an invisible system tray / menu bar app. It has two independent implementations sharing the same user-facing behaviour:
+VoiceToText is a global-hotkey dictation utility that runs as an invisible system tray / menu bar app. It has two independent platform implementations:
 
 - **macOS** — Swift + AppKit, built with Xcode
 - **Linux** — Rust, targets PipeWire + GNOME Wayland
 
-Both implementations follow the same pipeline: hotkey press → audio capture → transcription → clipboard → auto-paste → journal append. macOS transcribes via the Groq cloud API; Linux transcribes locally on-device by default (transcribe.cpp + Parakeet), with Groq as a config-selectable alternative.
+Both implementations record, transcribe, copy the result to the clipboard, and append it to the journal. macOS then auto-pastes the result; Linux intentionally leaves it on the clipboard for manual pasting. macOS transcribes via the Groq cloud API; Linux transcribes locally on-device by default (transcribe.cpp + Nemotron), with Groq as a config-selectable alternative.
 
 ---
 
@@ -26,7 +26,10 @@ transcription
   · cloud:        Groq Whisper API (whisper-large-v3-turbo) — macOS, or Linux with backend=groq
     │
     ▼
-clipboard + auto-paste  (CGEvent Cmd+V / XDG RemoteDesktop Ctrl+Y)
+clipboard  (NSPasteboard / wl-copy, xclip, or xsel)
+    │
+    ├── macOS: synthesise Cmd+V
+    └── Linux: manual paste
     │
     ▼
 journal append  (~/Documents/VoiceToText/YYYY-MM-DD.md)
@@ -102,12 +105,11 @@ The crate at `linux/` is both a binary and a library (`lib.rs` re-exports everyt
 |--------|------|
 | `state.rs` | `enum AppState { Idle, Recording, Transcribing }` |
 | `config.rs` | Backend selection (`backend`: local/groq), model path, and API key resolution (env var → XDG config file); `resolve_config_path()` respects `XDG_CONFIG_HOME` and `VOICETOTEXT_CONFIG_PATH` |
-| `engine.rs` | `TranscriptionEngine` enum — local on-device inference via `transcribe-cpp` (ggml) with a Parakeet GGUF, or the Groq cloud path |
+| `engine.rs` | `TranscriptionEngine` enum — local on-device inference via `transcribe-cpp` (ggml) with a Nemotron GGUF, or the Groq cloud path |
 | `groq.rs` | Pure request builder and response parser — no I/O; validates 25 MB upload cap |
 | `transport.rs` | `reqwest::blocking` HTTP execution; maps non-2xx to `TransportError` |
 | `recorder.rs` | `pw-record` capture: live raw-PCM chunks over a channel (local daemon streaming) or piped into `ffmpeg` → Opus/OGG at 16 kbps (Groq + CLI); SIGINT to stop; `list_audio_sources()` via `wpctl` |
 | `hotkey_daemon.rs` | Core async event loop: XDG GlobalShortcuts portal (+ auto-configured GNOME custom shortcut fallback) → `toggle_recording()` → full pipeline |
-| `autopaste.rs` | XDG RemoteDesktop portal → Ctrl+Y keysym injection (GNOME Wayland); restore token persisted to `~/.local/state/voicetotext/` |
 | `tray_app.rs` | `ksni` StatusNotifierItem tray; bridges events between tray and daemon via channels |
 | `platform.rs` | Clipboard (`wl-copy` / `xclip` / `xsel`), sound (`pw-play`), journal write, icon install |
 | `desktop.rs` | `probe_desktop_capabilities()` — checks GlobalShortcuts portal via `gdbus introspect` |
@@ -132,21 +134,18 @@ Stop sends SIGINT to `pw-record` via `libc::kill`, then drains the sink.
 
 Selected at startup by `config.rs::resolve_backend()` into a `TranscriptionEngine` (`engine.rs`):
 
-- **local (offline)** — `transcribe-cpp` (ggml) loads a Nemotron Speech Streaming English 0.6B GGUF once at startup (~0.3 s). Daemon recordings are transcribed **live**: `StreamingPwRecorder` forwards raw PCM chunks (256 ms) over a channel to a worker thread that feeds the model's streaming session, so the final transcript is ready ~instantly at stop (measured ~0.6 s stop-to-paste including journal/clipboard). Models without streaming support fall back to a batch run over the accumulated audio automatically. CLI file/record modes use batch: audio (file or recorder OGG) is decoded to PCM via `ffmpeg`. Model auto-resolves to `~/.local/share/voicetotext/models/nemotron-speech-streaming-en-0.6b-Q8_0.gguf` and is **auto-downloaded on first run** (streamed to a `.partial` file, resumable via HTTP Range, size-verified, renamed into place; custom `model_path` values are never auto-downloaded). Overrides: `model_path`/`language` config keys, `VOICETOTEXT_MODEL_PATH`, `VOICETOTEXT_LANGUAGE`.
+- **local (offline)** — `transcribe-cpp` (ggml) loads a Nemotron Speech Streaming English 0.6B GGUF once at startup (~0.3 s). Daemon recordings are transcribed **live**: `StreamingPwRecorder` forwards raw PCM chunks (256 ms) over a channel to a worker thread that feeds the model's streaming session, so the final transcript is ready ~instantly at stop (measured ~0.6 s stop-to-clipboard including journaling). Models without streaming support fall back to a batch run over the accumulated audio automatically. CLI file/record modes use batch: audio (file or recorder OGG) is decoded to PCM via `ffmpeg`. Model auto-resolves to `~/.local/share/voicetotext/models/nemotron-speech-streaming-en-0.6b-Q8_0.gguf` and is **auto-downloaded on first run** (streamed to a `.partial` file, resumable via HTTP Range, size-verified, renamed into place; custom `model_path` values are never auto-downloaded). Overrides: `model_path`/`language` config keys, `VOICETOTEXT_MODEL_PATH`, `VOICETOTEXT_LANGUAGE`.
 - **groq (cloud)** — same API and model as macOS. `build_groq_transcription_request()` in `groq.rs` is pure (no I/O) and fully unit-tested. `execute_http_request()` in `transport.rs` uses `reqwest::blocking` inside `tokio::task::spawn_blocking`.
 
-### Auto-paste
+### Clipboard
 
-`AutoPasteController` probes `XDG_SESSION_TYPE` and `XDG_CURRENT_DESKTOP` at construction time:
-
-- **GNOME Wayland** → XDG RemoteDesktop portal; injects `Ctrl_L` + `Y` keysyms (60 ms settle before injection). A restore token is saved to `~/.local/state/voicetotext/autopaste-restore-token` to skip re-prompting across sessions.
-- **Anything else** → graceful no-op; transcript is on the clipboard, auto-paste is skipped.
+After a successful Linux transcription, the daemon copies the text with `wl-copy`, `xclip`, or `xsel`. It does not inject a paste shortcut; the user pastes the clipboard contents manually in the target application.
 
 ### Key dependencies
 
 | Crate | Purpose |
 |-------|---------|
-| `ashpd 0.12` | XDG portal bindings (GlobalShortcuts + RemoteDesktop) |
+| `ashpd 0.12` | XDG GlobalShortcuts portal bindings |
 | `ksni 0.3` | StatusNotifierItem system tray |
 | `transcribe-cpp 0.1` | Local speech-to-text inference (ggml; compiles the native library via CMake) |
 | `reqwest 0.12` (blocking + rustls-tls) | HTTP client for Groq API |
@@ -205,7 +204,7 @@ Journal directory:
 
 **Audio format differs by platform.** macOS uses AAC/M4A (native AVFoundation, no external tools). Linux uses Opus/OGG via `pw-record | ffmpeg` (smaller files, but requires PipeWire and ffmpeg at runtime).
 
-**Auto-paste approach is platform-constrained.** macOS can synthesise any keystroke via CoreGraphics with Accessibility permission. Linux Wayland's security model requires going through the XDG RemoteDesktop portal, which only works reliably on GNOME; other desktops fall back gracefully.
+**Clipboard behavior differs by platform.** macOS synthesises `Cmd+V` through CoreGraphics after copying the transcript. Linux deliberately stops after copying to the clipboard, avoiding unreliable synthetic input on Wayland.
 
 **Library split on Linux.** The Rust crate is both binary and library so all logic can be unit-tested without running the daemon. `groq.rs` and `journal.rs` are fully pure — no I/O, just data transformation — and are comprehensively tested.
 
@@ -247,7 +246,6 @@ linux/                            Linux Rust crate
     transport.rs                  reqwest HTTP execution
     recorder.rs                   pw-record | ffmpeg pipeline
     hotkey_daemon.rs              Async event loop, toggle logic, pipeline
-    autopaste.rs                  XDG RemoteDesktop portal, restore token
     tray_app.rs                   ksni tray, event bridging
     platform.rs                   Clipboard, sound, journal, icons
     desktop.rs                    Portal capability probing

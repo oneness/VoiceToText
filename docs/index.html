@@ -302,7 +302,7 @@
 <section class="slide">
   <div class="box">
     <h1>VoiceToText</h1>
-    <p class="tagline">Instant dictation for macOS and Linux.<br>One hotkey. No window. Text appears where you type.</p>
+    <p class="tagline">Instant dictation for macOS and Linux.<br>One hotkey. No window. Text ready on your clipboard.</p>
   </div>
 </section>
 
@@ -311,7 +311,7 @@
   <div class="box">
     <div class="label">why</div>
     <h2>Typing is slow</h2>
-    <p class="big">Speaking is 3–4× faster than typing.<br>Most dictation tools are heavyweight, cloud-locked, or tied to a specific app.<br><br>VoiceToText is a background utility: press a hotkey, speak, and the text appears in whatever you're already doing.</p>
+    <p class="big">Speaking is 3–4× faster than typing.<br>Most dictation tools are heavyweight, cloud-locked, or tied to a specific app.<br><br>VoiceToText is a background utility: press a hotkey, speak, and the transcription is copied to your clipboard.</p>
   </div>
 </section>
 
@@ -327,9 +327,9 @@
       <div class="flow-arrow">→</div>
       <div class="flow-box">transcribe</div>
       <div class="flow-arrow">→</div>
-      <div class="flow-box hi">paste</div>
+      <div class="flow-box hi">clipboard</div>
     </div>
-    <p class="big" style="margin-top: 16px;">Press once to start recording. Press again to stop.<br>Text is on your clipboard and pasted automatically.<br>No window. No clicks. Zero friction.</p>
+    <p class="big" style="margin-top: 16px;">Press once to start recording. Press again to stop.<br>Text is copied to your clipboard.<br>macOS pastes automatically; Linux leaves it ready for manual paste.<br>No window. No clicks to transcribe.</p>
   </div>
 </section>
 
@@ -357,7 +357,7 @@
           <li>System tray (SNI)</li>
           <li>Alt + Space hotkey</li>
           <li>PipeWire + ffmpeg</li>
-          <li>XDG portal auto-paste</li>
+          <li>Clipboard-only output</li>
           <li>GNOME Wayland</li>
         </ul>
       </div>
@@ -374,7 +374,7 @@
     <div class="mono" style="margin-top: 24px; font-size: 15px;">
       <span class="cm"># local (Linux default recommendation)</span><br>
       model: nemotron-speech-streaming-en-0.6b-Q8_0.gguf<br>
-      mic → 16 kHz PCM chunks → streaming decode → ~0.6 s stop-to-paste<br><br>
+      mic → 16 kHz PCM chunks → streaming decode → ~0.6 s stop-to-clipboard<br><br>
       <span class="cm"># cloud</span><br>
       POST api.groq.com/openai/v1/audio/transcriptions<br>
       model: whisper-large-v3-turbo
@@ -411,7 +411,7 @@
       <tr><td><code>engine</code></td><td>Streaming transcribe.cpp inference (Nemotron GGUF) or Groq</td></tr>
       <tr><td><code>groq</code></td><td>Pure request builder + response parser</td></tr>
       <tr><td><code>transport</code></td><td>reqwest blocking HTTP execution</td></tr>
-      <tr><td><code>autopaste</code></td><td>XDG RemoteDesktop portal → Ctrl+Y keysyms</td></tr>
+      <tr><td><code>platform</code></td><td>Clipboard via wl-copy / xclip / xsel</td></tr>
       <tr><td><code>tray_app</code></td><td>ksni StatusNotifierItem tray</td></tr>
     </table>
   </div>
@@ -445,11 +445,11 @@
   </div>
 </section>
 
-<!-- ═══ 9. Auto-Paste ═══ -->
+<!-- ═══ 9. Clipboard ═══ -->
 <section class="slide">
   <div class="box">
-    <div class="label">auto-paste</div>
-    <h2>Platform-specific approach</h2>
+    <div class="label">clipboard</div>
+    <h2>Platform-specific completion</h2>
     <div class="two-col">
       <div class="col-box">
         <h3>macOS</h3>
@@ -463,14 +463,13 @@
       <div class="col-box">
         <h3>Linux</h3>
         <ul>
-          <li>XDG RemoteDesktop portal</li>
-          <li>Injects Ctrl+Y keysym</li>
-          <li>GNOME Wayland only</li>
-          <li>Restore token cached on disk</li>
+          <li>Copies to the clipboard</li>
+          <li>wl-copy / xclip / xsel</li>
+          <li>No synthetic key injection</li>
+          <li>Paste manually in the target app</li>
         </ul>
       </div>
     </div>
-    <p class="big" style="margin-top: 20px; font-size: 16px;">On unsupported Linux desktops, auto-paste is skipped gracefully — the transcript is still on the clipboard.</p>
   </div>
 </section>
 
@@ -515,7 +514,7 @@
       <tr><td><strong>Idle</strong></td><td>Icon in tray — no badge</td></tr>
       <tr><td><strong>Recording</strong></td><td>Red dot badge (macOS) / attention status (Linux)</td></tr>
       <tr><td><strong>Transcribing</strong></td><td>Grey pill badge</td></tr>
-      <tr><td><strong>Done</strong></td><td>Completion sound + text pasted</td></tr>
+      <tr><td><strong>Done</strong></td><td>Completion sound + text copied (and auto-pasted on macOS)</td></tr>
     </table>
   </div>
 </section>

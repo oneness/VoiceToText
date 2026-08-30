@@ -11,7 +11,7 @@ Target behavior:
 1. Record microphone audio with a global hotkey.
 2. Stop recording with the same hotkey.
 3. Send audio to Groq Whisper.
-4. Copy the transcript and paste it into the active app.
+4. Copy the transcript to the clipboard for manual pasting.
 5. Append the transcript to a daily Markdown journal.
 6. Expose a small desktop presence similar to the macOS menu bar app.
 
@@ -52,12 +52,7 @@ The risky parts are GNOME/Wayland desktop integration:
 2. Arbitrary synthetic key injection is restricted on Wayland.
 3. Tray or status icon support is environment-dependent on GNOME.
 
-This means "exact clone" is a product goal, not an assumption. We should design for two paste strategies:
-
-1. Primary: direct paste/injection path when the desktop allows it.
-2. Fallback: copy to clipboard and show a completion notification when direct injection is unavailable.
-
-If strict auto-paste parity is required on GNOME Wayland, we should expect a deeper integration path such as a portal-mediated helper or GNOME Shell extension.
+For reliability, the Linux implementation intentionally does not inject paste keystrokes. It copies each transcript to the clipboard and lets the user paste it with the target application's normal shortcut.
 
 ## Language Decision
 
@@ -118,7 +113,7 @@ Responsibilities:
 1. Microphone recording.
 2. Global shortcut registration.
 3. Clipboard access.
-4. Paste injection strategy.
+4. Clipboard completion behavior.
 5. Notifications.
 6. Config and journal path discovery using XDG rules.
 
@@ -161,14 +156,9 @@ Target default:
 
 This matches the macOS mental model, but we should validate that GNOME does not conflict with it on the target setup.
 
-### Paste
+### Clipboard
 
-Abstract paste behind a trait with capability detection:
-
-1. `PasteMode::Direct`
-2. `PasteMode::ClipboardOnly`
-
-The app should not pretend direct paste is always possible on Wayland.
+Copy completed transcripts to the system clipboard. Do not attempt direct key injection on Wayland.
 
 ## TDD Plan
 
@@ -189,8 +179,8 @@ Write tests first for:
 
 Write tests first for:
 
-1. `start -> stop -> transcribe -> copy -> paste -> journal`
-2. Failure paths for recording, network, auth, empty transcript, and paste fallback.
+1. `start -> stop -> transcribe -> copy -> journal`
+2. Failure paths for recording, network, auth, empty transcript, and clipboard access.
 3. Temp-file cleanup behavior.
 
 ### Phase 3: Linux adapters
@@ -200,8 +190,7 @@ Write contract tests and local integration tests for:
 1. Recorder adapter.
 2. Portal/global-shortcut adapter.
 3. Clipboard adapter.
-4. Paste adapter.
-5. Notification adapter.
+4. Notification adapter.
 
 ### Phase 4: GNOME desktop shell
 
@@ -210,7 +199,7 @@ Write manual acceptance checks for:
 1. Tray/status presence.
 2. Startup activation.
 3. Portal permission prompts.
-4. Wayland direct-paste behavior.
+4. Wayland clipboard behavior.
 
 ## First Deliverable
 

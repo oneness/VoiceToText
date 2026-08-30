@@ -106,6 +106,7 @@ test_welcome_screen.sh
 verify_implementation.sh
 .legacy-local/
 linux/target/
+target/
 linux/result
 
 # Claude Code local settings
